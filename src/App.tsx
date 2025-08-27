@@ -10,6 +10,7 @@ interface UserInfo {
   given_name?: string;
   family_name?: string;
   sub?: string;
+  acr?: string; // <-- přidáno pro LoA
 }
 
 // TypeScript interface pro Keycloak konfiguraci
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [stepUpDone, setStepUpDone] = useState<boolean>(false); // přidáno
 
   // Konfigurace pro Keycloak - použije environment variables
   const KEYCLOAK_CONFIG: KeycloakConfig = useMemo(() => ({
@@ -255,6 +257,7 @@ Keycloak detail: ${errorData.error_description}`);
     }
   }, [KEYCLOAK_CONFIG, parseUserInfoFromIdToken, fetchUserInfo]);
 
+<<<<<<< HEAD
   // Zpracování návratu z Keycloak
   const parseKeycloakCallback = useCallback((): void => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -264,6 +267,50 @@ Keycloak detail: ${errorData.error_description}`);
     if (error) {
       console.error('❌ Keycloak error:', error);
       alert(`Chyba při přihlášení: ${error}`);
+=======
+  // Parsování user info z ID tokenu
+  const parseUserInfoFromIdToken = (idToken: string): void => {
+    try {
+      // ID token je JWT - parsuj payload (prostřední část mezi tečkami)
+      const tokenParts = idToken.split('.');
+      if (tokenParts.length !== 3) {
+        throw new Error('Neplatný ID token formát');
+      }
+      
+      // Dekóduj base64 payload
+      const payload = JSON.parse(atob(tokenParts[1]));
+      console.log('🆔 ID token payload:', payload);
+      
+      setIsAuthenticated(true);
+      setUserInfo({
+        name: payload.name || `${payload.given_name || ''} ${payload.family_name || ''}`.trim() || payload.preferred_username || 'Neznámý uživatel',
+        email: payload.email || 'N/A',
+        preferred_username: payload.preferred_username || 'N/A',
+        given_name: payload.given_name || 'N/A',
+        family_name: payload.family_name || 'N/A',
+        sub: payload.sub || 'N/A',
+        roles: payload.realm_access?.roles || payload.groups || payload.roles || [],
+        acr: payload.acr || 'N/A' // <-- přidáno pro LoA
+      });
+      
+      // Ulož user info
+      localStorage.setItem('user_info', JSON.stringify({
+        name: payload.name || `${payload.given_name || ''} ${payload.family_name || ''}`.trim() || payload.preferred_username || 'Neznámý uživatel',
+        email: payload.email || 'N/A',
+        preferred_username: payload.preferred_username || 'N/A',
+        given_name: payload.given_name || 'N/A',
+        family_name: payload.family_name || 'N/A',
+        sub: payload.sub || 'N/A',
+        roles: payload.realm_access?.roles || payload.groups || payload.roles || [],
+        acr: payload.acr || 'N/A' // <-- přidáno pro LoA
+      }));
+      
+      console.log('🎉 Uživatel úspěšně přihlášen z ID tokenu!');
+      
+      // Vyčisti URL a použitý code
+      window.history.replaceState({}, document.title, window.location.pathname);
+      localStorage.removeItem('used_auth_code');
+>>>>>>> 5d2c29a (add step-up)
       setLoading(false);
       return;
     }
@@ -271,10 +318,83 @@ Keycloak detail: ${errorData.error_description}`);
     if (code) {
       console.log('✅ Keycloak vrátil authorization code:', code);
       
+<<<<<<< HEAD
       // Zkontroluj jestli už tento code nebyl použit
       const usedCode = localStorage.getItem('used_auth_code');
       if (usedCode === code) {
         console.log('⚠️ Authorization code už byl použit - ignoruji');
+=======
+      const userInfoUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/userinfo`;
+      console.log('📡 UserInfo endpoint:', userInfoUrl);
+      
+      const userInfoResponse = await fetch(userInfoUrl, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+      
+      console.log('🔍 UserInfo response status:', userInfoResponse.status, userInfoResponse.statusText);
+      
+      if (!userInfoResponse.ok) {
+        const errorText = await userInfoResponse.text();
+        console.error('❌ UserInfo error response:', errorText);
+        throw new Error(`UserInfo request failed: ${userInfoResponse.status} ${userInfoResponse.statusText}`);
+      }
+      
+      const userData = await userInfoResponse.json();
+      console.log('✅ User info získány:', userData);
+      
+      setIsAuthenticated(true);
+      setUserInfo({
+        name: userData.name || `${userData.given_name || ''} ${userData.family_name || ''}`.trim() || userData.preferred_username || 'Neznámý uživatel',
+        email: userData.email || 'N/A',
+        preferred_username: userData.preferred_username || 'N/A',
+        given_name: userData.given_name || 'N/A',
+        family_name: userData.family_name || 'N/A',
+        sub: userData.sub || 'N/A',
+        roles: userData.realm_access?.roles || userData.groups || [],
+        acr: userData.acr || 'N/A' // <-- přidáno pro LoA
+      });
+      
+      // Ulož user info
+      localStorage.setItem('user_info', JSON.stringify({
+        name: userData.name || `${userData.given_name || ''} ${userData.family_name || ''}`.trim() || userData.preferred_username || 'Neznámý uživatel',
+        email: userData.email || 'N/A',
+        preferred_username: userData.preferred_username || 'N/A',
+        given_name: userData.given_name || 'N/A',
+        family_name: userData.family_name || 'N/A',
+        sub: userData.sub || 'N/A',
+        roles: userData.realm_access?.roles || userData.groups || [],
+        acr: userData.acr || 'N/A' // <-- přidáno pro LoA
+      }));
+      
+      console.log('🎉 Uživatel úspěšně přihlášen z UserInfo!');
+      
+      // Vyčisti URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      localStorage.removeItem('used_auth_code');
+      setLoading(false);
+      
+    } catch (error) {
+      console.error('❌ Chyba při získávání user info:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Neznámá chyba';
+      
+      // Pro localhost development - použij fallback
+      if (window.location.hostname === 'localhost' && errorMessage.includes('401')) {
+        console.log('💡 CORS/401 chyba na localhost - používám fallback user info');
+        setIsAuthenticated(true);
+        setUserInfo({
+          name: 'Test Uživatel (Fallback)',
+          email: 'test@localhost.com',
+          preferred_username: 'test.user',
+          given_name: 'Test',
+          family_name: 'Uživatel',
+          sub: 'localhost-test-user',
+          roles: ['user']
+        });
+        
+        window.history.replaceState({}, document.title, window.location.pathname);
+>>>>>>> 5d2c29a (add step-up)
         setLoading(false);
         return;
       }
@@ -357,6 +477,19 @@ Keycloak detail: ${errorData.error_description}`);
     
     console.log('✅ Uživatel odhlášen');
   };
+  
+  // Funkce pro step-up autentizaci (vyšší úroveň ověření)
+  const stepUpAuth = (): void => {
+    const redirectUri = window.location.origin + "?stepup=1"; // přidáno query param
+    const authUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/auth` +
+      `?client_id=${KEYCLOAK_CONFIG.clientId}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=code` +
+      `&scope=openid` +
+      `&acr_values=medium` +
+      `&state=${Date.now()}`;
+    window.location.href = authUrl;
+  };
 
   // Debug funkce pro smazání všech dat
   const clearAllData = (): void => {
@@ -366,6 +499,7 @@ Keycloak detail: ${errorData.error_description}`);
     window.location.reload();
   };
 
+<<<<<<< HEAD
   // useEffect pro inicializaci aplikace při načtení
   useEffect(() => {
     console.log('🚀 Aplikace se inicializuje...');
@@ -382,6 +516,15 @@ Keycloak detail: ${errorData.error_description}`);
       checkAuthStatus();
     }
   }, [parseKeycloakCallback, checkAuthStatus]);
+=======
+  // Po návratu z Keycloaku zjisti, zda šlo o step-up
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("stepup") === "1") {
+      setStepUpDone(true);
+    }
+  }, [isAuthenticated]);
+>>>>>>> 5d2c29a (add step-up)
 
   if (loading) {
     return (
@@ -421,6 +564,7 @@ Keycloak detail: ${errorData.error_description}`);
 
       <main className="main-content">
         {!isAuthenticated ? (
+          // ...login screen...
           <div className="login-container">
             <div className="login-card">
               <h2>Přihlášení vyžadováno</h2>
@@ -452,12 +596,31 @@ Keycloak detail: ${errorData.error_description}`);
               )}
             </div>
           </div>
+        ) : stepUpDone ? (
+          // Zobraz stránku po step-up autentizaci
+          <div className="dashboard">
+            <div className="card success-card">
+              <h2>✅ Jste autentizováni druhým faktorem!</h2>
+              <p>Vaše aktuální úroveň ověření (acr): <code>{userInfo?.acr || 'N/A'}</code></p>
+              <button onClick={() => setStepUpDone(false)} className="btn btn-secondary" style={{marginTop: '16px'}}>
+                Zpět do aplikace
+              </button>
+            </div>
+          </div>
         ) : (
+          // ...dashboard...
           <div className="dashboard">
             <div className="card success-card">
               <h2>🎉 JSTE ÚSPĚŠNĚ PŘIHLÁŠENI!</h2>
+<<<<<<< HEAD
               <p>Vítejte v aplikaci! Přihlášení proběhlo úspěšně pomocí SkodaIDP OIDC.</p>
               
+=======
+              <p>Vítejte v aplikaci! Přihlášení proběhlo úspěšně pomocí Keycloak OIDC.</p>
+              <button onClick={stepUpAuth} className="btn btn-warning" style={{marginTop: '16px'}}>
+                🔒 Vyžádat vyšší úroveň ověření (step-up)
+              </button>
+>>>>>>> 5d2c29a (add step-up)
               <div className="user-info">
                 <h3>Vaše informace:</h3>
                 <div><strong>Celé jméno:</strong> {userInfo?.name}</div>
@@ -465,6 +628,7 @@ Keycloak detail: ${errorData.error_description}`);
                 <div><strong>Email:</strong> {userInfo?.email}</div>
                 <div><strong>Role:</strong> {userInfo?.roles?.join(', ')}</div>
                 <div><strong>User ID:</strong> <code>{userInfo?.sub || 'N/A'}</code></div>
+                <div><strong>Aktuální LoA (acr):</strong> <code>{userInfo?.acr || 'N/A'}</code></div>
                 <div><strong>Stav:</strong> <span className="status-active">✅ Aktivní relace</span></div>
               </div>
             </div>
