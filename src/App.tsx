@@ -499,7 +499,6 @@ Keycloak detail: ${errorData.error_description}`);
     window.location.reload();
   };
 
-<<<<<<< HEAD
   // useEffect pro inicializaci aplikace při načtení
   useEffect(() => {
     console.log('🚀 Aplikace se inicializuje...');
@@ -516,7 +515,6 @@ Keycloak detail: ${errorData.error_description}`);
       checkAuthStatus();
     }
   }, [parseKeycloakCallback, checkAuthStatus]);
-=======
   // Po návratu z Keycloaku zjisti, zda šlo o step-up
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -524,7 +522,6 @@ Keycloak detail: ${errorData.error_description}`);
       setStepUpDone(true);
     }
   }, [isAuthenticated]);
->>>>>>> 5d2c29a (add step-up)
 
   if (loading) {
     return (
@@ -612,15 +609,12 @@ Keycloak detail: ${errorData.error_description}`);
           <div className="dashboard">
             <div className="card success-card">
               <h2>🎉 JSTE ÚSPĚŠNĚ PŘIHLÁŠENI!</h2>
-<<<<<<< HEAD
               <p>Vítejte v aplikaci! Přihlášení proběhlo úspěšně pomocí SkodaIDP OIDC.</p>
               
-=======
               <p>Vítejte v aplikaci! Přihlášení proběhlo úspěšně pomocí Keycloak OIDC.</p>
               <button onClick={stepUpAuth} className="btn btn-warning" style={{marginTop: '16px'}}>
                 🔒 Vyžádat vyšší úroveň ověření (step-up)
               </button>
->>>>>>> 5d2c29a (add step-up)
               <div className="user-info">
                 <h3>Vaše informace:</h3>
                 <div><strong>Celé jméno:</strong> {userInfo?.name}</div>
