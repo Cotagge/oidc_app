@@ -219,6 +219,18 @@
   transform: translateY(-1px);
 }
 
+.btn-auth-danger {
+  background: linear-gradient(135deg, #e53e3e 0%, #c53030 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(229, 62, 62, 0.3);
+}
+
+.btn-auth-danger:hover {
+  background: linear-gradient(135deg, #c53030 0%, #9c2626 100%);
+  box-shadow: 0 6px 16px rgba(229, 62, 62, 0.4);
+  transform: translateY(-1px);
+}
+
 /* Alternative methods section */
 .alternative-methods {
   margin: 32px 0;
@@ -571,6 +583,11 @@ code {
 .auth-badge.auth-2fa {
   background-color: #d1fae5;
   color: #047857;
+}
+
+.auth-badge.auth-3fa {
+  background-color: #fee2e2;
+  color: #dc2626;
 }
 
 /* Step-up success */

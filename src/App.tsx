@@ -18,20 +18,22 @@ interface KeycloakConfig {
   realm: string;
   clientId1F: string;  // Pro 1FA
   clientId2F: string;  // Pro 2FA
+  clientId3F: string;  // Pro 3FA
 }
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [usedClientType, setUsedClientType] = useState<'1FA' | '2FA' | null>(null);
+  const [usedClientType, setUsedClientType] = useState<'1FA' | '2FA' | '3FA' | null>(null);
 
   // Konfigurace pro Keycloak - použije environment variables
   const KEYCLOAK_CONFIG: KeycloakConfig = useMemo(() => ({
     url: process.env.REACT_APP_KEYCLOAK_URL || 'https://your-keycloak-server.com',
     realm: process.env.REACT_APP_KEYCLOAK_REALM || 'your-realm',
     clientId1F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_1F || 'test-client-oidc-demo-1f',  // 1FA klient z .env
-    clientId2F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_2F || 'test-client-oidc-demo-2f'   // 2FA klient z .env
+    clientId2F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_2F || 'test-client-oidc-demo-2f',   // 2FA klient z .env
+    clientId3F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_3F || 'test-client-oidc-demo-3f'    // 3FA klient z .env
   }), []);
 
   // URL pro metadata (.well-known) - opravený standardní endpoint
@@ -167,12 +169,13 @@ const App: React.FC = () => {
   }, [fetchUserInfo]);
 
   // Výměna code za token s PKCE
-  const exchangeCodeForToken = useCallback(async (code: string, clientType: '1FA' | '2FA'): Promise<void> => {
+  const exchangeCodeForToken = useCallback(async (code: string, clientType: '1FA' | '2FA' | '3FA'): Promise<void> => {
     try {
       const tokenUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/token`;
       // Použít stejný redirect_uri jako při authorization requestu
       const redirectUri = `${window.location.origin}?client_type=${clientType}`;
-      const clientId = clientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
+      const clientId = clientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
+                      clientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
       
       const codeVerifier = localStorage.getItem('code_verifier');
       
@@ -244,7 +247,7 @@ const App: React.FC = () => {
     const code = urlParams.get('code');
     const error = urlParams.get('error');
     const errorDescription = urlParams.get('error_description');
-    const clientType = urlParams.get('client_type') as '1FA' | '2FA' || '1FA';
+    const clientType = urlParams.get('client_type') as '1FA' | '2FA' | '3FA' || '1FA';
     
     if (error) {
       alert(`Chyba při přihlášení: ${error}\n${errorDescription || ''}`);
@@ -268,7 +271,7 @@ const App: React.FC = () => {
     const token = localStorage.getItem('access_token');
     if (token) {
       const storedUserInfo = localStorage.getItem('user_info');
-      const storedClientType = localStorage.getItem('used_client_type') as '1FA' | '2FA' || '1FA';
+      const storedClientType = localStorage.getItem('used_client_type') as '1FA' | '2FA' | '3FA' || '1FA';
       if (storedUserInfo) {
         try {
           const parsedUserInfo = JSON.parse(storedUserInfo);
@@ -339,6 +342,32 @@ const App: React.FC = () => {
     }
   }, [KEYCLOAK_CONFIG, generateCodeVerifier, generateCodeChallenge]);
 
+  // Přihlášení s 3FA klientem s PKCE
+  const loginWith3FA = useCallback(async (): Promise<void> => {
+    try {
+      const codeVerifier = generateCodeVerifier();
+      const codeChallenge = await generateCodeChallenge(codeVerifier);
+      
+      // Uložit pro pozdější použití při token exchange
+      localStorage.setItem('code_verifier', codeVerifier);
+      localStorage.setItem('code_challenge', codeChallenge);
+
+      const redirectUri = `${window.location.origin}?client_type=3FA`;
+      const authUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/auth` +
+        `?client_id=${encodeURIComponent(KEYCLOAK_CONFIG.clientId3F)}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=code` +
+        `&scope=openid profile email` +
+        `&code_challenge=${codeChallenge}` +
+        `&code_challenge_method=S256` +
+        `&state=${Date.now()}`;
+      
+      window.location.href = authUrl;
+    } catch (error) {
+      alert('Chyba při přípravě přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
+    }
+  }, [KEYCLOAK_CONFIG, generateCodeVerifier, generateCodeChallenge]);
+
   const logout = useCallback(async (): Promise<void> => {
     const accessToken = localStorage.getItem('access_token');
     const refreshToken = localStorage.getItem('refresh_token');
@@ -362,7 +391,8 @@ const App: React.FC = () => {
     if (refreshToken) {
       try {
         const logoutUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/logout`;
-        const clientId = usedClientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
+        const clientId = usedClientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
+                        usedClientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
         
         await fetch(logoutUrl, {
           method: 'POST',
@@ -433,13 +463,18 @@ const App: React.FC = () => {
               {/* Authentication buttons */}
               <div className="auth-buttons">
                 <button onClick={loginWith1FA} className="btn-auth btn-auth-primary">
-                  <span>🔐</span>
-                  Přihlásit se (1FA)
+                  <span>🔒</span>
+                  Weak client (1FA)
                 </button>
                 
                 <button onClick={loginWith2FA} className="btn-auth btn-auth-warning">
-                  <span>🔒</span>
-                  Přihlásit se (2FA)
+                  <span>🔐</span>
+                  Medium client (2FA)
+                </button>
+                
+                <button onClick={loginWith3FA} className="btn-auth btn-auth-danger">
+                  <span>🔐</span>
+                  Strong client (3FA)
                 </button>
               </div>
 
@@ -451,6 +486,7 @@ const App: React.FC = () => {
                   <div><strong>Realm:</strong> {KEYCLOAK_CONFIG.realm}</div>
                   <div><strong>1FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId1F}</div>
                   <div><strong>2FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId2F}</div>
+                  <div><strong>3FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId3F}</div>
                   <div><strong>Scope:</strong> openid profile email</div>
                   <div><strong>Response Type:</strong> code (Authorization Code Flow s PKCE)</div>
                   <div><strong>PKCE Method:</strong> S256 (SHA256)</div>
@@ -494,7 +530,7 @@ const App: React.FC = () => {
                     <span className="info-value">
                       <code>{userInfo?.acr}</code>
                       {usedClientType && (
-                        <span className={`auth-badge ${usedClientType === '1FA' ? 'auth-1fa' : 'auth-2fa'}`}>
+                        <span className={`auth-badge ${usedClientType === '1FA' ? 'auth-1fa' : usedClientType === '2FA' ? 'auth-2fa' : 'auth-3fa'}`}>
                           {usedClientType} Client
                         </span>
                       )}
@@ -503,7 +539,8 @@ const App: React.FC = () => {
                   <div className="info-item">
                     <span className="info-label">Použitý klient:</span>
                     <span className="info-value status-active">
-                      ✅ {usedClientType === '1FA' ? KEYCLOAK_CONFIG.clientId1F : KEYCLOAK_CONFIG.clientId2F}
+                      ✅ {usedClientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
+                          usedClientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F}
                     </span>
                   </div>
                   <div className="info-item">
@@ -531,7 +568,8 @@ const App: React.FC = () => {
                 <div className="debug-info">
                   <h4>Debug informace:</h4>
                   <div><strong>Sub:</strong> {userInfo?.sub}</div>
-                  <div><strong>Použitý Client:</strong> {usedClientType === '1FA' ? KEYCLOAK_CONFIG.clientId1F : KEYCLOAK_CONFIG.clientId2F}</div>
+                  <div><strong>Použitý Client:</strong> {usedClientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
+                                                      usedClientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F}</div>
                   <div><strong>Realm:</strong> {KEYCLOAK_CONFIG.realm}</div>
                   <div><strong>Metadata:</strong> <a href={wellKnownUrl} target="_blank" rel="noreferrer">.well-known</a></div>
                 </div>
