@@ -590,6 +590,13 @@ code {
   color: #dc2626;
 }
 
+/* AMR details styling */
+.amr-details {
+  font-size: 11px;
+  color: #6b7280;
+  margin-left: 8px;
+  font-style: italic;
+}
 /* Step-up success */
 .stepup-success {
   background: linear-gradient(135deg, #d1fae5 0%, #ecfdf5 100%);
