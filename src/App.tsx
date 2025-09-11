@@ -454,7 +454,7 @@ const App: React.FC = () => {
         {!isAuthenticated ? (
           <div className="login-container">
             {/* ŠKODA Logo */}
-            <div className="skoda-logo">ŠKODA</div>
+            <div className="skoda-logo">ŠKODA {process.env.REACT_APP_KEYCLOAK_ENV}</div>
 
             <div className="login-card">
               <h2>Login to Demo app</h2>
