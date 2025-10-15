@@ -610,13 +610,6 @@ const App: React.FC = () => {
 
   return (
     <div className="app">
-      {/* Logout button for authenticated users */}
-      {isAuthenticated && (
-        <button onClick={logout} className="logout-button">
-          Odhlásit se
-        </button>
-      )}
-
       <main className="main-content">
         {!isAuthenticated ? (
           <div className="login-container">
