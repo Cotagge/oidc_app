@@ -314,7 +314,8 @@ const App: React.FC = () => {
         `&scope=openid profile email` +
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
-        `&state=${Date.now()}`;
+        `&state=${Date.now()}`+
+        `&prompt=login`;
       
       window.location.href = authUrl;
     } catch (error) {
