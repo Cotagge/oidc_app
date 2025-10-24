@@ -311,7 +311,7 @@ const App: React.FC = () => {
         `?client_id=${encodeURIComponent(KEYCLOAK_CONFIG.clientId1F)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
-        `&scope=openid profile email` +
+        `&scope=openid profile email microprofile-jwt amr` +
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
         `&state=${Date.now()}`+
@@ -338,7 +338,7 @@ const App: React.FC = () => {
         `?client_id=${encodeURIComponent(KEYCLOAK_CONFIG.clientId2F)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
-        `&scope=openid profile email` +
+        `&scope=openid profile email microprofile-jwt amr` +
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
         `&state=${Date.now()}`;
@@ -364,7 +364,7 @@ const App: React.FC = () => {
         `?client_id=${encodeURIComponent(KEYCLOAK_CONFIG.clientId3F)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
-        `&scope=openid profile email` +
+        `&scope=openid profile email microprofile-jwt amr` +
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
         `&state=${Date.now()}`;
@@ -431,6 +431,10 @@ const App: React.FC = () => {
       'otp': 'OTP token', 
       'mfa': 'Multifaktor',
       'sc': 'Smart Card',
+      'cert': 'Certifikát',
+      'x509': 'X.509 Certifikát',
+      'pki': 'PKI Certifikát',
+      'mtls': 'Mutual TLS',
       'bio': 'Biometrie',
       'fpt': 'Otisk prstu',
       'pin': 'PIN kód',
@@ -441,11 +445,142 @@ const App: React.FC = () => {
       'iris': 'Sken očí',
       'voice': 'Hlas',
       'swk': 'Software klíč',
-      'hwk': 'Hardware klíč'
+      'hwk': 'Hardware klíč',
+      'webauthn': 'WebAuthn',
+      'fido': 'FIDO',
+      'u2f': 'U2F'
     };
     
     return amr.map(method => amrMappings[method] || method.toUpperCase()).join(', ');
   }, []);
+
+  // Debug funkce pro analýzu tokenů a mTLS detekci
+  const debugTokens = useCallback((): void => {
+    const accessToken = localStorage.getItem('access_token');
+    const idToken = localStorage.getItem('id_token');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const refreshToken = localStorage.getItem('refresh_token');
+    
+    console.group('=== TOKEN DEBUG + mTLS DETEKCE ===');
+    
+    // Detekce mTLS - zkontrolujeme TLS connection info
+    console.log('=== mTLS DETEKCE ===');
+    console.log('Location protocol:', window.location.protocol);
+    console.log('Je HTTPS:', window.location.protocol === 'https:');
+    
+    // Zkusíme detekovat client cert z connection
+    if (window.location.protocol === 'https:') {
+      console.log('HTTPS connection - možný mTLS');
+      // Note: Browser security neumozní přímý přístup k TLS client cert info
+      console.log('Pro ověření mTLS zkontrolujte Keycloak server logy');
+    }
+    
+    if (idToken) {
+      try {
+        const payload = JSON.parse(atob(idToken.split('.')[1]));
+        console.log('=== ID TOKEN ANALYSIS ===');
+        console.log('ID Token payload (celý):', payload);
+        console.log('AMR v ID tokenu:', payload.amr);
+        console.log('ACR v ID tokenu:', payload.acr);
+        console.log('Authentication time:', payload.auth_time);
+        console.log('Session state:', payload.session_state);
+        
+        // Hledáme všechny možné claims související s autentizací nebo mTLS
+        const authRelatedClaims = Object.keys(payload).filter(key => 
+          key.includes('auth') || 
+          key.includes('amr') || 
+          key.includes('acr') || 
+          key.includes('cert') ||
+          key.includes('x509') ||
+          key.includes('pki') ||
+          key.includes('mtls') ||
+          key.includes('tls') ||
+          key.includes('client_cert') ||
+          key.includes('ssl')
+        );
+        console.log('Všechny auth/mTLS related claims:', authRelatedClaims.reduce((obj, key) => {
+          (obj as any)[key] = (payload as any)[key];
+          return obj;
+        }, {} as { [key: string]: any }));
+        
+        // Speciální kontrola pro mTLS indikátory
+        if (payload.acr && !payload.amr) {
+          console.warn('⚠️  ACR je nastaven ale AMR chybí - typické pro mTLS!');
+          console.log('ACR level:', payload.acr, '- pravděpodobně mTLS authentication');
+        }
+        
+      } catch (e) {
+        console.error('Chyba při parsování ID tokenu:', e);
+      }
+    } else {
+      console.log('ID Token není dostupný');
+    }
+    
+    if (accessToken) {
+      try {
+        const payload = JSON.parse(atob(accessToken.split('.')[1]));
+        console.log('=== ACCESS TOKEN ANALYSIS ===');
+        console.log('Access Token payload (celý):', payload);
+        console.log('AMR v Access tokenu:', payload.amr);
+        console.log('ACR v Access tokenu:', payload.acr);
+        
+        // Hledáme všechny možné claims související s autentizací
+        const authRelatedClaims = Object.keys(payload).filter(key => 
+          key.includes('auth') || 
+          key.includes('amr') || 
+          key.includes('acr') || 
+          key.includes('cert') ||
+          key.includes('x509') ||
+          key.includes('pki') ||
+          key.includes('mtls') ||
+          key.includes('tls') ||
+          key.includes('client_cert') ||
+          key.includes('ssl')
+        );
+        console.log('Všechny auth/mTLS related claims:', authRelatedClaims.reduce((obj, key) => {
+          (obj as any)[key] = (payload as any)[key];
+          return obj;
+        }, {} as { [key: string]: any }));
+        
+      } catch (e) {
+        console.error('Chyba při parsování Access tokenu:', e);
+      }
+    } else {
+      console.log('Access Token není dostupný');
+    }
+    
+    // Zkusíme také fetch UserInfo endpoint pro srovnání
+    if (accessToken) {
+      console.log('=== USERINFO ENDPOINT ===');
+      fetch(`${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/userinfo`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      })
+      .then(response => response.json())
+      .then(userInfoData => {
+        console.log('UserInfo endpoint response:', userInfoData);
+        console.log('AMR z UserInfo:', userInfoData.amr);
+        console.log('ACR z UserInfo:', userInfoData.acr);
+        
+        // mTLS detekce v UserInfo
+        if (userInfoData.acr && !userInfoData.amr) {
+          console.warn('⚠️  UserInfo: ACR bez AMR - pravděpodobně mTLS');
+        }
+      })
+      .catch(error => {
+        console.error('Chyba při volání UserInfo:', error);
+      });
+    }
+    
+    console.log('=== DOPORUČENÍ KROKY ===');
+    console.log('1. Zkontrolujte Keycloak Authentication Flows');
+    console.log('2. Ověřte X509 Client Certificate Authenticator nastavení');
+    console.log('3. Přidejte Client Mapper pro AMR claim');
+    console.log('4. Zkontrolujte server logy během mTLS přihlášení');
+    
+    console.groupEnd();
+  }, [KEYCLOAK_CONFIG]);
 
   // Debug funkce pro smazání všech dat
   const clearAllData = (): void => {
@@ -476,13 +611,6 @@ const App: React.FC = () => {
 
   return (
     <div className="app">
-      {/* Logout button for authenticated users */}
-      {isAuthenticated && (
-        <button onClick={logout} className="logout-button">
-          Odhlásit se
-        </button>
-      )}
-
       <main className="main-content">
         {!isAuthenticated ? (
           <div className="login-container">
@@ -520,7 +648,7 @@ const App: React.FC = () => {
                   <div><strong>1FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId1F}</div>
                   <div><strong>2FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId2F}</div>
                   <div><strong>3FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId3F}</div>
-                  <div><strong>Scope:</strong> openid profile email</div>
+                  <div><strong>Scope:</strong> openid profile email microprofile-jwt amr</div>
                   <div><strong>Response Type:</strong> code (Authorization Code Flow s PKCE)</div>
                   <div><strong>PKCE Method:</strong> S256 (SHA256)</div>
                   <div><strong>Metadata:</strong> <a href={wellKnownUrl} target="_blank" rel="noreferrer">.well-known</a></div>
@@ -528,7 +656,14 @@ const App: React.FC = () => {
                     onClick={clearAllData} 
                     className="btn-auth btn-auth-secondary mt-4"
                   >
-                    🧹 Smazat všechna data (debug)
+                    🧹 Vymazat všechna data (debug)
+                  </button>
+                  
+                  <button 
+                    onClick={debugTokens} 
+                    className="btn-auth btn-auth-secondary mt-4"
+                  >
+                    🔍 Debug tokeny (console)
                   </button>
                 </div>
               )}
@@ -578,6 +713,11 @@ const App: React.FC = () => {
                           [{userInfo.amr.join(', ')}]
                         </span>
                       )}
+                      {userInfo?.acr && (!userInfo?.amr || userInfo.amr.length === 0) && (
+                        <span className="mtls-indicator">
+                          🔒 Pravděpodobně mTLS (ACR bez AMR)
+                        </span>
+                      )}
                     </span>
                   </div>
                   <div className="info-item">
@@ -601,10 +741,20 @@ const App: React.FC = () => {
                   Odhlásit se
                 </button>
                 
-                <button onClick={clearAllData} className="btn-auth btn-auth-secondary">
-                  <span>🧹</span>
-                  Vymazat data
-                </button>
+                {/* Debug tlačítka pouze pro vývoj */}
+                {process.env.NODE_ENV === 'development' && (
+                  <>
+                    <button onClick={clearAllData} className="btn-auth btn-auth-secondary">
+                      <span>🧹</span>
+                      Vymazat data (debug)
+                    </button>
+                    
+                    <button onClick={debugTokens} className="btn-auth btn-auth-secondary">
+                      <span>🔍</span>
+                      Debug tokeny
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Debug info for development */}

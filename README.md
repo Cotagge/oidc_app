@@ -1,6 +1,29 @@
-# Getting Started with Create React App
+# OIDC Demo Application - ŠKODA Auto
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Demo aplikace pro testování OIDC autentizace s podporou multi-faktorové autentizace (1FA, 2FA, 3FA).
+
+## Funkce
+
+- ✅ OIDC Authorization Code Flow s PKCE
+- ✅ Podpora 1FA, 2FA a 3FA klientů
+- ✅ Keycloak integrace
+- ✅ TypeScript
+- ✅ Moderní React UI
+
+## Konfigurace
+
+Nastavte následující environment variables v `.env` souboru:
+
+```bash
+REACT_APP_KEYCLOAK_URL=https://xxxx
+REACT_APP_KEYCLOAK_REALM=standard
+REACT_APP_KEYCLOAK_CLIENT_ID_1F=test-client-oidc-demo_v2-1f
+REACT_APP_KEYCLOAK_CLIENT_ID_2F=test-client-oidc-demo_v2-2f
+REACT_APP_KEYCLOAK_CLIENT_ID_3F=test-client-oidc-demo_v2-3f
+REACT_APP_KEYCLOAK_SCOPE=openid profile email microprofile-jwt
+```
+
+## Původní Create React App dokumentace
 
 ## Available Scripts
 
