@@ -315,7 +315,8 @@ const App: React.FC = () => {
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
         `&state=${Date.now()}`+
-        `&prompt=login`;
+        `&prompt=login`+
+        `&max_age=0`;
       
       window.location.href = authUrl;
     } catch (error) {
