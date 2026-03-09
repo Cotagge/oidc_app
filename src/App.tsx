@@ -258,17 +258,7 @@ const App: React.FC = () => {
       // Sestavení AuthnRequest XML
       const requestId = '_' + Math.random().toString(36).substring(2, 18);
       const issueInstant = new Date().toISOString();
-      const authnRequest = `<?xml version="1.0" encoding="UTF-8"?>
-<samlp:AuthnRequest
-  xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
-  xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
-  ID="${requestId}"
-  Version="2.0"
-  IssueInstant="${issueInstant}"
-  AssertionConsumerServiceURL="${acsUrl}"
-  ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect">
-  <saml:Issuer>${issuer}</saml:Issuer>
-</samlp:AuthnRequest>`;
+      const authnRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}" AssertionConsumerServiceURL="${acsUrl}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"><saml:Issuer>${issuer}</saml:Issuer></samlp:AuthnRequest>`;
 
       // Deflate + base64 (HTTP Redirect binding)
       const deflated = deflateRaw(authnRequest);
