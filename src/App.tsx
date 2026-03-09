@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { deflateRaw } from 'pako';
 import './App.css';
 
 // TypeScript interface pro uživatelské informace
@@ -270,7 +271,7 @@ const App: React.FC = () => {
 </samlp:AuthnRequest>`;
 
       // Deflate + base64 (HTTP Redirect binding)
-      const deflated = await deflateRaw(authnRequest);
+      const deflated = deflateRaw(authnRequest);
       let deflatedStr = '';
       for (let i = 0; i < deflated.length; i++) deflatedStr += String.fromCharCode(deflated[i]);
       const samlRequest = btoa(deflatedStr)
@@ -291,35 +292,6 @@ const App: React.FC = () => {
       alert('Chyba při přípravě SAML přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
     }
   }, [KEYCLOAK_CONFIG]);
-
-  // Deflate bez knihovny — pomocí DecompressionStream API (raw deflate)
-  const deflateRaw = async (input: string): Promise<Uint8Array> => {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(input);
-
-    // Použijeme CompressionStream (dostupný v moderních prohlížečích)
-    const cs = new (window as any).CompressionStream('deflate-raw');
-    const writer = cs.writable.getWriter();
-    writer.write(data);
-    writer.close();
-
-    const chunks: Uint8Array[] = [];
-    const reader = cs.readable.getReader();
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
-
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return result;
-  };
 
   // Parsování SAMLResponse z URL (redirect binding — response je jako GET parametr)
   const parseSamlCallback = useCallback((): void => {
