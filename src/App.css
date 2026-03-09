@@ -465,6 +465,170 @@
   }
 }
 
+/* Protocol selector */
+.protocol-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 8px 0 24px 0;
+}
+
+.btn-protocol {
+  width: 100%;
+  padding: 20px 24px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+}
+
+.btn-protocol-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.btn-protocol-title {
+  font-size: 18px;
+  font-weight: 700;
+  display: block;
+  line-height: 1.2;
+}
+
+.btn-protocol-desc {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.8;
+  display: block;
+}
+
+.btn-protocol-oidc {
+  background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%);
+  border-color: #63b3ed;
+  color: #2b6cb0;
+}
+
+.btn-protocol-oidc:hover {
+  background: linear-gradient(135deg, #bee3f8 0%, #90cdf4 100%);
+  border-color: #3182ce;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(49, 130, 206, 0.25);
+}
+
+.btn-protocol-saml {
+  background: linear-gradient(135deg, #faf5ff 0%, #e9d8fd 100%);
+  border-color: #b794f4;
+  color: #553c9a;
+}
+
+.btn-protocol-saml:hover {
+  background: linear-gradient(135deg, #e9d8fd 0%, #d6bcfa 100%);
+  border-color: #805ad5;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(128, 90, 213, 0.25);
+}
+
+/* Protocol badge */
+.protocol-badge-row {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.protocol-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.protocol-badge-oidc {
+  background-color: #bee3f8;
+  color: #2b6cb0;
+}
+
+.protocol-badge-saml {
+  background-color: #e9d8fd;
+  color: #553c9a;
+}
+
+/* Back button */
+.btn-back {
+  background: none;
+  border: none;
+  color: #718096;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0 16px 0;
+  display: block;
+  transition: color 0.2s;
+}
+
+.btn-back:hover {
+  color: #2d3748;
+}
+
+/* SAML attributes section */
+.saml-attributes-section {
+  margin: 24px 0;
+  text-align: left;
+}
+
+.saml-attributes-section h3 {
+  margin: 0 0 16px 0;
+  color: #553c9a;
+  font-size: 18px;
+  font-weight: 600;
+  border-bottom: 2px solid #e9d8fd;
+  padding-bottom: 8px;
+}
+
+.saml-attr-key {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px !important;
+  word-break: break-all;
+}
+
+.saml-xml-details {
+  margin-top: 16px;
+}
+
+.saml-xml-details summary {
+  cursor: pointer;
+  color: #553c9a;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.saml-xml-details summary:hover {
+  color: #805ad5;
+}
+
+.saml-xml-pre {
+  background: #1a202c;
+  color: #e2e8f0;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  text-align: left;
+}
+
 /* Utility classes */
 code {
   background-color: #edf2f7;
