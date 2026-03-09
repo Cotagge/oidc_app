@@ -252,7 +252,7 @@ const App: React.FC = () => {
       const samlClientId = clientType === '3FA' ? KEYCLOAK_CONFIG.samlClientId3F :
                            clientType === '2FA' ? KEYCLOAK_CONFIG.samlClientId2F : KEYCLOAK_CONFIG.samlClientId1F;
 
-      const acsUrl = `${window.location.origin}?client_type=${clientType}&protocol=saml`;
+      const acsUrl = `${window.location.origin}?client_type=${clientType}&amp;protocol=saml`;
       const issuer = samlClientId;
 
       // Sestavení AuthnRequest XML
