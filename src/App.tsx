@@ -436,40 +436,11 @@ const App: React.FC = () => {
   // ── Inicializace ────────────────────────────────────────────────────────────
 
   const checkAuthStatus = useCallback((): void => {
-    const usedProto = localStorage.getItem('used_protocol') as Protocol;
-    const storedClientType = localStorage.getItem('used_client_type') as ClientType || '1FA';
-    const storedUserInfo = localStorage.getItem('user_info');
-    const storedSamlAttrs = localStorage.getItem('saml_attributes');
-
-    if (usedProto === 'saml' && storedUserInfo && storedSamlAttrs) {
-      try {
-        setUserInfo(JSON.parse(storedUserInfo));
-        setSamlAttributes(JSON.parse(storedSamlAttrs));
-        setUsedClientType(storedClientType);
-        setProtocol('saml');
-        setIsAuthenticated(true);
-        setLoading(false);
-        return;
-      } catch { /* pokračuj */ }
-    }
-
-    const token = localStorage.getItem('access_token');
-    if (token && storedUserInfo) {
-      try {
-        setUserInfo(JSON.parse(storedUserInfo));
-        setIsAuthenticated(true);
-        setUsedClientType(storedClientType);
-        setProtocol('oidc');
-        setLoading(false);
-      } catch {
-        fetchUserInfo(token);
-      }
-    } else if (token) {
-      fetchUserInfo(token);
-    } else {
-      setLoading(false);
-    }
-  }, [fetchUserInfo]);
+    // Rozcestník je vždy mandatory — žádná automatická obnova session z localStorage.
+    // Vyčistíme případná stará data a zobrazíme rozcestník.
+    localStorage.clear();
+    setLoading(false);
+  }, []);
 
   const parseKeycloakCallback = useCallback((): void => {
     const urlParams = new URLSearchParams(window.location.search);
