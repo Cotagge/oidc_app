@@ -300,13 +300,12 @@ const App: React.FC = () => {
     }
 
     try {
-      // Dekódování base64 (URL-safe) → XML
-      const base64 = samlResponse.replace(/-/g, '+').replace(/_/g, '/');
-      // Dekódování base64 → UTF-8 string
-      const binaryStr = atob(base64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-      const xmlString = new TextDecoder('utf-8').decode(bytes);
+      // SAMLResponse je base64(XML) — bez komprese, přímé dekódování
+      const xmlString = decodeURIComponent(
+        atob(samlResponse).split('').map(c =>
+          '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+        ).join('')
+      );
 
       setSamlRawXml(xmlString);
 
