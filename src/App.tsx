@@ -261,18 +261,16 @@ const App: React.FC = () => {
       const authnRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}" AssertionConsumerServiceURL="${acsUrl}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"><saml:Issuer>${issuer}</saml:Issuer></samlp:AuthnRequest>`;
 
       // Deflate + base64 (HTTP Redirect binding)
+      // Standard base64 (ne URL-safe) + encodeURIComponent pro URL
       const deflated = deflateRaw(authnRequest);
       let deflatedStr = '';
       for (let i = 0; i < deflated.length; i++) deflatedStr += String.fromCharCode(deflated[i]);
-      const samlRequest = btoa(deflatedStr)
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
+      const samlRequest = encodeURIComponent(btoa(deflatedStr));
 
       const relayState = encodeURIComponent(`client_type=${clientType}`);
       const samlEndpoint = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/saml`;
 
-      const redirectUrl = `${samlEndpoint}?SAMLRequest=${encodeURIComponent(samlRequest)}&RelayState=${relayState}`;
+      const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}&RelayState=${relayState}`;
 
       localStorage.setItem('saml_client_type', clientType);
       localStorage.setItem('saml_request_id', requestId);
