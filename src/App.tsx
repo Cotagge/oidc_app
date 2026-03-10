@@ -325,25 +325,31 @@ const App: React.FC = () => {
       // NameID
       const nameId = xmlDoc.querySelector('NameID')?.textContent || 'N/A';
 
-      // Atributy z Assertion
+      // Atributy z Assertion — mergujeme duplicitní Name (např. Role)
       const attrs: SamlAttributes = {};
       xmlDoc.querySelectorAll('Attribute').forEach(attr => {
         const name = attr.getAttribute('Name') || attr.getAttribute('FriendlyName') || 'unknown';
         const values = Array.from(attr.querySelectorAll('AttributeValue')).map(v => v.textContent || '');
-        attrs[name] = values.length === 1 ? values[0] : values;
+        if (attrs[name]) {
+          // Merguj s existujícími hodnotami
+          const existing = Array.isArray(attrs[name]) ? attrs[name] as string[] : [attrs[name] as string];
+          attrs[name] = [...existing, ...values];
+        } else {
+          attrs[name] = values.length === 1 ? values[0] : values;
+        }
       });
 
       // Základní info z assertion
       const conditions = xmlDoc.querySelector('Conditions');
       const authnStatement = xmlDoc.querySelector('AuthnStatement');
-      const authnContext = xmlDoc.querySelector('AuthnContextClassRef')?.textContent || 'N/A';
+      const authnContext = xmlDoc.querySelector('AuthnContextClassRef')?.textContent?.trim() || 'N/A';
       const sessionIndex = authnStatement?.getAttribute('SessionIndex') || 'N/A';
       const notBefore = conditions?.getAttribute('NotBefore') || 'N/A';
       const notOnOrAfter = conditions?.getAttribute('NotOnOrAfter') || 'N/A';
 
-      // Přidáme meta-info do atributů pro zobrazení
+      // Meta-info jako první položky pro zobrazení (krátké klíče bez __)
       attrs['__NameID'] = nameId;
-      attrs['__AuthnContextClassRef'] = authnContext;
+      attrs['__AuthnContext'] = authnContext;
       attrs['__SessionIndex'] = sessionIndex;
       attrs['__NotBefore'] = notBefore;
       attrs['__NotOnOrAfter'] = notOnOrAfter;
@@ -356,16 +362,18 @@ const App: React.FC = () => {
         return Array.isArray(val) ? val[0] : val || 'N/A';
       };
 
-      const name = getAttr('displayName') ||
-                   getAttr('cn') ||
-                   `${getAttr('givenName')} ${getAttr('sn')}`.trim() ||
-                   nameId;
+      const fullName = getAttr('displayName') !== 'N/A' ? getAttr('displayName') :
+                       getAttr('cn') !== 'N/A' ? getAttr('cn') :
+                       (getAttr('givenName') !== 'N/A' || getAttr('sn') !== 'N/A')
+                         ? `${getAttr('givenName')} ${getAttr('sn')}`.trim()
+                         : nameId;
 
       const info: UserInfo = {
-        name: name !== 'N/A N/A' ? name : nameId,
-        email: getAttr('email') || getAttr('mail') || 'N/A',
-        preferred_username: getAttr('uid') || getAttr('samAccountName') || nameId,
-        given_name: getAttr('givenName') || 'N/A',
+        name: fullName,
+        email: getAttr('email') !== 'N/A' ? getAttr('email') : getAttr('mail') !== 'N/A' ? getAttr('mail') : 'N/A',
+        preferred_username: getAttr('uid') !== 'N/A' ? getAttr('uid') :
+                            getAttr('samAccountName') !== 'N/A' ? getAttr('samAccountName') : nameId,
+        given_name: getAttr('givenName') !== 'N/A' ? getAttr('givenName') : nameId,
         family_name: getAttr('sn') || 'N/A',
         sub: nameId,
         acr: authnContext,
