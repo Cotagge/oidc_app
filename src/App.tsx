@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { deflateRaw } from 'pako';
+import { deflateRaw, inflateRaw } from 'pako';
 import './App.css';
 
 // TypeScript interface pro uživatelské informace
@@ -300,11 +300,17 @@ const App: React.FC = () => {
     }
 
     try {
-      // SAMLResponse je base64(XML) — bez komprese
+      // SAMLResponse = base64(deflateRaw(XML)) — Keycloak komprimuje response
       const binaryStr = atob(samlResponse);
       const bytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-      const xmlString = new TextDecoder('utf-8').decode(bytes);
+      // Zkus inflateRaw (komprimovaná response), fallback na plain XML
+      let xmlString: string;
+      try {
+        xmlString = new TextDecoder('utf-8').decode(inflateRaw(bytes));
+      } catch {
+        xmlString = new TextDecoder('utf-8').decode(bytes);
+      }
 
       setSamlRawXml(xmlString);
 
