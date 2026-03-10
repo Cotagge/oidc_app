@@ -567,12 +567,6 @@ const App: React.FC = () => {
                       </div>
                     </>
                   )}
-                  {protocol === 'saml' && (
-                    <div className="info-item">
-                      <span className="info-label">AuthnContext:</span>
-                      <span className="info-value"><code>{userInfo.acr}</code></span>
-                    </div>
-                  )}
                   <div className="info-item">
                     <span className="info-label">Použitý klient:</span>
                     <span className="info-value status-active">
