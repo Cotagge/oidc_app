@@ -1,7 +1,7 @@
-# CLAUDE.md — oidc_app projekt
+# CLAUDE.md — SIP Demo App projekt
 
 ## Co je tato aplikace
-React SPA (TypeScript, Create React App) pro **demonstraci přihlášení přes Keycloak**.
+React SPA (TypeScript, Create React App) pro **demonstraci přihlášení přes Keycloak** (SIP Demo App).
 
 Uživatel si vybere client ID (1FA/2FA/3FA), každý má nastavenou jinou LOA (1–3). Flow pak vynucuje MFA odpovídající LOA.
 
