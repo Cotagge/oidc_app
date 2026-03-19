@@ -525,7 +525,7 @@ const App: React.FC = () => {
         <main className="main-content">
           <div className="login-container">
             <div className="skoda-logo">
-              <Logo color="emerald" width={120} />
+              <Logo color="#4caf50" width={120} />
               {process.env.REACT_APP_KEYCLOAK_ENV && (
                 <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
               )}
@@ -618,11 +618,11 @@ const App: React.FC = () => {
               )}
 
               <div className="auth-buttons">
-                <Button onClick={logout} variant="contained" color="primary" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5 }}>
+                <Button onClick={logout} variant="contained" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#4caf50', color: '#1a1a1a', '&:hover': { bgcolor: '#43d350' } }}>
                   Odhlásit se
                 </Button>
                 {process.env.NODE_ENV === 'development' && (
-                  <Button onClick={clearAllData} variant="outlined" color="inherit" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, fontSize: 15, py: 1.5 }}>
+                  <Button onClick={clearAllData} variant="outlined" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, fontSize: 15, py: 1.5, borderColor: '#ccc', color: '#555', '&:hover': { borderColor: '#999', bgcolor: '#f5f5f5' } }}>
                     Vymazat data (debug)
                   </Button>
                 )}
@@ -658,7 +658,7 @@ const App: React.FC = () => {
         <main className="main-content">
           <div className="login-container">
             <div className="skoda-logo">
-              <Logo color="emerald" width={120} />
+              <Logo color="#4caf50" width={120} />
               {process.env.REACT_APP_KEYCLOAK_ENV && (
                 <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
               )}
@@ -695,7 +695,7 @@ const App: React.FC = () => {
       <main className="main-content">
         <div className="login-container">
           <div className="skoda-logo">
-            <Logo color="emerald" width={120} />
+            <Logo color="#4caf50" width={120} />
             {process.env.REACT_APP_KEYCLOAK_ENV && (
               <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
             )}
@@ -717,24 +717,24 @@ const App: React.FC = () => {
             <div className="auth-buttons">
               <Button
                 onClick={() => protocol === 'saml' ? loginWithSaml('1FA') : loginWithOidc('1FA')}
-                variant="contained" color="primary" fullWidth size="large"
-                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5 }}
+                variant="contained" fullWidth size="large"
+                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#4caf50', color: '#1a1a1a', '&:hover': { bgcolor: '#43d350' } }}
               >
                 Weak client (1FA)
               </Button>
 
               <Button
                 onClick={() => protocol === 'saml' ? loginWithSaml('2FA') : loginWithOidc('2FA')}
-                variant="contained" color="warning" fullWidth size="large"
-                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, color: '#1a1a1a' }}
+                variant="contained" fullWidth size="large"
+                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#ff9800', color: '#1a1a1a', '&:hover': { bgcolor: '#ffa726' } }}
               >
                 Medium client (2FA)
               </Button>
 
               <Button
                 onClick={() => protocol === 'saml' ? loginWithSaml('3FA') : loginWithOidc('3FA')}
-                variant="contained" color="error" fullWidth size="large"
-                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5 }}
+                variant="contained" fullWidth size="large"
+                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#f44336', color: '#fff', '&:hover': { bgcolor: '#ef5350' } }}
               >
                 Strong client (3FA)
               </Button>
@@ -759,7 +759,7 @@ const App: React.FC = () => {
                     <div><strong>3FA SAML Client:</strong> {KEYCLOAK_CONFIG.samlClientId3F}</div>
                   </>
                 )}
-                <Button onClick={clearAllData} variant="outlined" color="inherit" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, mt: 1 }}>
+                <Button onClick={clearAllData} variant="outlined" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, mt: 1, borderColor: '#ccc', color: '#555', '&:hover': { borderColor: '#999', bgcolor: '#f5f5f5' } }}>
                   Vymazat všechna data (debug)
                 </Button>
               </div>
