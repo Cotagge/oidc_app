@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { deflateRaw, inflateRaw } from 'pako';
+import { SkodaThemeProvider, Logo } from '@skodaflow/web-library';
+import Button from '@mui/material/Button';
 import './App.css';
 
 // TypeScript interface pro uživatelské informace
@@ -506,20 +508,28 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Načítám...</p>
-      </div>
+      <SkodaThemeProvider globalBaseline>
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Načítám...</p>
+        </div>
+      </SkodaThemeProvider>
     );
   }
 
   // Přihlášený uživatel
   if (isAuthenticated && userInfo) {
     return (
+      <SkodaThemeProvider globalBaseline>
       <div className="app">
         <main className="main-content">
           <div className="login-container">
-            <div className="skoda-logo">ŠKODA {process.env.REACT_APP_KEYCLOAK_ENV}</div>
+            <div className="skoda-logo">
+              <Logo color="#4caf50" width={120} />
+              {process.env.REACT_APP_KEYCLOAK_ENV && (
+                <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
+              )}
+            </div>
             <div className="login-card">
               <div className="protocol-badge-row">
                 <span className={`protocol-badge ${protocol === 'saml' ? 'protocol-badge-saml' : 'protocol-badge-oidc'}`}>
@@ -608,15 +618,13 @@ const App: React.FC = () => {
               )}
 
               <div className="auth-buttons">
-                <button onClick={logout} className="btn-auth btn-auth-primary">
-                  <span>👋</span>
+                <Button onClick={logout} variant="contained" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#4caf50', color: '#1a1a1a', '&:hover': { bgcolor: '#43d350' } }}>
                   Odhlásit se
-                </button>
+                </Button>
                 {process.env.NODE_ENV === 'development' && (
-                  <button onClick={clearAllData} className="btn-auth btn-auth-secondary">
-                    <span>🧹</span>
+                  <Button onClick={clearAllData} variant="outlined" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, fontSize: 15, py: 1.5, borderColor: '#ccc', color: '#555', '&:hover': { borderColor: '#999', bgcolor: '#f5f5f5' } }}>
                     Vymazat data (debug)
-                  </button>
+                  </Button>
                 )}
               </div>
 
@@ -638,16 +646,23 @@ const App: React.FC = () => {
           </div>
         </main>
       </div>
+      </SkodaThemeProvider>
     );
   }
 
   // Rozcestník OIDC / SAML
   if (protocol === null) {
     return (
+      <SkodaThemeProvider globalBaseline>
       <div className="app">
         <main className="main-content">
           <div className="login-container">
-            <div className="skoda-logo">ŠKODA {process.env.REACT_APP_KEYCLOAK_ENV}</div>
+            <div className="skoda-logo">
+              <Logo color="#4caf50" width={120} />
+              {process.env.REACT_APP_KEYCLOAK_ENV && (
+                <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
+              )}
+            </div>
             <div className="login-card">
               <h2>Login to Demo app</h2>
               <p className="login-subtitle">Vyberte protokol pro přihlášení</p>
@@ -669,15 +684,22 @@ const App: React.FC = () => {
           </div>
         </main>
       </div>
+      </SkodaThemeProvider>
     );
   }
 
   // Výběr klienta (1FA/2FA/3FA) po volbě protokolu
   return (
+    <SkodaThemeProvider globalBaseline>
     <div className="app">
       <main className="main-content">
         <div className="login-container">
-          <div className="skoda-logo">ŠKODA {process.env.REACT_APP_KEYCLOAK_ENV}</div>
+          <div className="skoda-logo">
+            <Logo color="#4caf50" width={120} />
+            {process.env.REACT_APP_KEYCLOAK_ENV && (
+              <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
+            )}
+          </div>
           <div className="login-card">
             <button onClick={() => setProtocol(null)} className="btn-back">
               ← Zpět
@@ -693,29 +715,29 @@ const App: React.FC = () => {
             <p className="login-subtitle">Vyberte úroveň autentizace</p>
 
             <div className="auth-buttons">
-              <button
+              <Button
                 onClick={() => protocol === 'saml' ? loginWithSaml('1FA') : loginWithOidc('1FA')}
-                className="btn-auth btn-auth-primary"
+                variant="contained" fullWidth size="large"
+                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#4caf50', color: '#1a1a1a', '&:hover': { bgcolor: '#43d350' } }}
               >
-                <span>🔒</span>
                 Weak client (1FA)
-              </button>
+              </Button>
 
-              <button
+              <Button
                 onClick={() => protocol === 'saml' ? loginWithSaml('2FA') : loginWithOidc('2FA')}
-                className="btn-auth btn-auth-warning"
+                variant="contained" fullWidth size="large"
+                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#ff9800', color: '#1a1a1a', '&:hover': { bgcolor: '#ffa726' } }}
               >
-                <span>🔐</span>
                 Medium client (2FA)
-              </button>
+              </Button>
 
-              <button
+              <Button
                 onClick={() => protocol === 'saml' ? loginWithSaml('3FA') : loginWithOidc('3FA')}
-                className="btn-auth btn-auth-danger"
+                variant="contained" fullWidth size="large"
+                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#f44336', color: '#fff', '&:hover': { bgcolor: '#ef5350' } }}
               >
-                <span>🔐</span>
                 Strong client (3FA)
-              </button>
+              </Button>
             </div>
 
             {process.env.NODE_ENV === 'development' && (
@@ -737,15 +759,16 @@ const App: React.FC = () => {
                     <div><strong>3FA SAML Client:</strong> {KEYCLOAK_CONFIG.samlClientId3F}</div>
                   </>
                 )}
-                <button onClick={clearAllData} className="btn-auth btn-auth-secondary mt-4">
-                  🧹 Vymazat všechna data (debug)
-                </button>
+                <Button onClick={clearAllData} variant="outlined" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, mt: 1, borderColor: '#ccc', color: '#555', '&:hover': { borderColor: '#999', bgcolor: '#f5f5f5' } }}>
+                  Vymazat všechna data (debug)
+                </Button>
               </div>
             )}
           </div>
         </div>
       </main>
     </div>
+    </SkodaThemeProvider>
   );
 };
 
