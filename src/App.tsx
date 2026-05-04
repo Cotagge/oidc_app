@@ -1,14 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { deflateRaw, inflateRaw } from 'pako';
-import {
-  SkodaThemeProvider,
-  Logo,
-  PageLayout,
-  Header,
-  HeaderLogo,
-  Footer,
-  Banner,
-} from '@skodaflow/web-library';
+import { SkodaThemeProvider, Banner } from '@skodaflow/web-library';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
@@ -28,9 +20,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LogoutIcon from '@mui/icons-material/Logout';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import BadgeIcon from '@mui/icons-material/Badge';
-import ShieldIcon from '@mui/icons-material/Shield';
-import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
-import LockIcon from '@mui/icons-material/Lock';
 import './App.css';
 
 // ── Typy ──────────────────────────────────────────────────────────────────────
@@ -72,7 +61,27 @@ type Stage = 'env' | 'protocol' | 'clientType';
 
 // ── Konstanty ─────────────────────────────────────────────────────────────────
 
-const SKODA_GREEN = '#78faae';
+// Paleta inspirovaná kcmonitor: tlumená zelená pro buttony/loga,
+// status zelená pro indikátory, oranžová a červená pro 2FA / 3FA hierarchii.
+const COLORS = {
+  greenButton: '#3aaf57',        // primary (buttony, loga, hover border)
+  greenButtonHover: '#2d9448',
+  greenStatus: '#4cd964',        // status dot, success
+  greenStatusBg: '#e8fbed',      // pastel pro chip pozadí
+  greenStatusText: '#1a7a32',
+  amber: '#f5a623',              // 2FA medium
+  amberHover: '#e09600',
+  red: '#e74c3c',                // 3FA strong / chyby
+  redHover: '#c0392b',
+  redBg: '#fdecea',
+  textPrimary: '#1a1a1a',
+  textSecondary: '#6b6b6b',
+  textMuted: '#9a9a9a',
+  border: '#e5e5e5',
+  bg: '#f5f5f5',
+  surface: '#ffffff',
+};
+
 const STORAGE_ENV_KEY = 'sip_demo_env';
 
 // ── Helpers pro výběr clientId podle typu ────────────────────────────────────
@@ -561,53 +570,86 @@ const App: React.FC = () => {
 
   // ── Společné kusy layoutu ─────────────────────────────────────────────────
 
-  const headerNode = (
-    <Header
-      logo={
-        <HeaderLogo
-          href="/"
-          onClick={(e: React.MouseEvent) => { e.preventDefault(); handleResetEnv(); }}
-          logoProps={{ color: SKODA_GREEN, width: 110 }}
+  // Kompaktní top bar (nepoužívá Skoda Header — to by zdvojovalo logo).
+  // Vlevo: název appky + drobný status dot, vpravo: chip aktivního prostředí.
+  const topBar = (
+    <Box
+      sx={{
+        bgcolor: COLORS.surface,
+        borderBottom: `1px solid ${COLORS.border}`,
+        px: { xs: 2, md: 4 },
+        py: 1.5,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box
+          sx={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            bgcolor: envConfig ? COLORS.greenStatus : COLORS.textMuted,
+            boxShadow: envConfig ? `0 0 6px ${COLORS.greenStatus}` : 'none',
+          }}
         />
-      }
-      buttons={
-        envConfig && (
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Chip
-              label={envConfig.label}
-              size="small"
-              sx={{
-                bgcolor: SKODA_GREEN,
-                color: '#0e3a2f',
-                fontWeight: 700,
-                letterSpacing: 0.5,
-              }}
-            />
-          </Stack>
-        )
-      }
-    />
+        <Typography
+          component="button"
+          onClick={handleResetEnv}
+          sx={{
+            fontWeight: 700,
+            fontSize: '1rem',
+            color: COLORS.textPrimary,
+            background: 'none',
+            border: 'none',
+            p: 0,
+            cursor: 'pointer',
+            letterSpacing: 0.2,
+            '&:hover': { color: COLORS.greenButton },
+          }}
+        >
+          SIP Demo App
+        </Typography>
+      </Box>
+      {envConfig && (
+        <Chip
+          label={envConfig.label}
+          size="small"
+          sx={{
+            bgcolor: COLORS.greenStatusBg,
+            color: COLORS.greenStatusText,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            fontSize: '0.72rem',
+          }}
+        />
+      )}
+    </Box>
   );
 
-  const footerNode = (
-    <Footer>
-      <Container>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          justifyContent="space-between"
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
-          spacing={1}
-          sx={{ py: 2 }}
-        >
-          <Typography variant="body2" sx={{ opacity: 0.7 }}>
-            © {new Date().getFullYear()} ŠKODA AUTO — SIP Demo App
-          </Typography>
-          <Typography variant="caption" sx={{ opacity: 0.5 }}>
-            {envConfig ? `${envConfig.label} · ${envConfig.realm}` : 'Není zvoleno prostředí'}
-          </Typography>
-        </Stack>
-      </Container>
-    </Footer>
+  // Tenký řádek místo dark Footeru.
+  const bottomBar = (
+    <Box
+      sx={{
+        borderTop: `1px solid ${COLORS.border}`,
+        bgcolor: COLORS.surface,
+        px: { xs: 2, md: 4 },
+        py: 1.25,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 1,
+        flexWrap: 'wrap',
+      }}
+    >
+      <Typography variant="caption" sx={{ color: COLORS.textMuted, fontSize: '0.72rem' }}>
+        © {new Date().getFullYear()} ŠKODA AUTO — SIP Demo App
+      </Typography>
+      <Typography variant="caption" sx={{ color: COLORS.textMuted, fontSize: '0.72rem' }}>
+        {envConfig ? `${envConfig.label} · ${envConfig.realm}` : 'Není zvoleno prostředí'}
+      </Typography>
+    </Box>
   );
 
   // ── Loading / config error guard ──────────────────────────────────────────
@@ -631,9 +673,9 @@ const App: React.FC = () => {
   if (!config || loading) {
     return (
       <SkodaThemeProvider globalBaseline>
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 2 }}>
-          <CircularProgress sx={{ color: SKODA_GREEN }} />
-          <Typography variant="body2" sx={{ opacity: 0.7 }}>Načítám…</Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 2, bgcolor: COLORS.bg }}>
+          <CircularProgress sx={{ color: COLORS.greenButton }} />
+          <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>Načítám…</Typography>
         </Box>
       </SkodaThemeProvider>
     );
@@ -642,27 +684,45 @@ const App: React.FC = () => {
   // ── Render obsah podle stavu ──────────────────────────────────────────────
 
   const renderContent = () => {
-    // 1) Přihlášený uživatel
-    if (isAuthenticated && userInfo) {
-      return renderAuthenticated();
-    }
-    // 2) Před-login wizard
+    if (isAuthenticated && userInfo) return renderAuthenticated();
     if (stage === 'env') return renderEnvSelector();
     if (stage === 'protocol') return renderProtocolSelector();
     return renderClientTypeSelector();
   };
+
+  // Univerzální chip-back tlačítko ve stylu kcmonitor.
+  const BackChip: React.FC<{ label: string }> = ({ label }) => (
+    <Button
+      onClick={handleBack}
+      startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />}
+      sx={{
+        height: 32,
+        borderRadius: '16px',
+        bgcolor: COLORS.greenStatusBg,
+        color: COLORS.greenStatusText,
+        fontWeight: 700,
+        textTransform: 'none',
+        px: 1.5,
+        fontSize: '0.78rem',
+        '&:hover': { bgcolor: '#d4f4dd' },
+      }}
+    >
+      {label}
+    </Button>
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // Stage 1: výběr prostředí
   // ──────────────────────────────────────────────────────────────────────────
 
   const renderEnvSelector = () => (
-    <Container maxWidth="md" sx={{ py: { xs: 4, md: 8 } }}>
-      <Stack alignItems="center" spacing={1} sx={{ mb: 4, textAlign: 'center' }}>
-        <Logo color={SKODA_GREEN} width={140} />
-        <Typography variant="h4" sx={{ mt: 2, fontWeight: 700 }}>SIP Demo App</Typography>
-        <Typography variant="body1" sx={{ opacity: 0.75, maxWidth: 520 }}>
-          Vyberte prostředí Keycloak (IdP), proti kterému chcete demonstrovat přihlášení.
+    <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+      <Stack spacing={0.5} sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+          Vyberte prostředí
+        </Typography>
+        <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+          Zvolte Keycloak (IdP), proti kterému chcete demonstrovat přihlášení.
         </Typography>
       </Stack>
 
@@ -672,18 +732,23 @@ const App: React.FC = () => {
         </Box>
       )}
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="center">
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' },
+          gap: 2,
+        }}
+      >
         {Object.entries(config.environments).map(([key, env]) => (
-          <SelectionCard
+          <EnvCard
             key={key}
-            icon={<LockIcon sx={{ fontSize: 40, color: SKODA_GREEN }} />}
-            title={env.label}
-            subtitle={env.realm}
-            description={env.url.replace(/^https?:\/\//, '')}
+            label={env.label}
+            realm={env.realm}
+            host={env.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
             onClick={() => handleSelectEnv(key)}
           />
         ))}
-      </Stack>
+      </Box>
     </Container>
   );
 
@@ -692,15 +757,21 @@ const App: React.FC = () => {
   // ──────────────────────────────────────────────────────────────────────────
 
   const renderProtocolSelector = () => (
-    <Container maxWidth="md" sx={{ py: { xs: 4, md: 8 } }}>
-      <Button startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ mb: 3 }}>
-        Změnit prostředí
-      </Button>
+    <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+        <BackChip label="Zpět" />
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.greenStatus }} />
+        <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+          {envConfig?.label}
+        </Typography>
+      </Stack>
 
-      <Stack alignItems="center" spacing={1} sx={{ mb: 4, textAlign: 'center' }}>
-        <Typography variant="h4" sx={{ fontWeight: 700 }}>Vyberte protokol</Typography>
-        <Typography variant="body1" sx={{ opacity: 0.75 }}>
-          Prostředí: <strong>{envConfig?.label}</strong>
+      <Stack spacing={0.5} sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+          Vyberte protokol
+        </Typography>
+        <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+          OIDC nebo SAML 2.0 — vybraný protokol určuje login flow.
         </Typography>
       </Stack>
 
@@ -710,80 +781,99 @@ const App: React.FC = () => {
         </Box>
       )}
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="center">
-        <SelectionCard
-          icon={<VpnKeyIcon sx={{ fontSize: 40, color: SKODA_GREEN }} />}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+          gap: 2,
+        }}
+      >
+        <ProtocolCard
+          icon={<VpnKeyIcon sx={{ fontSize: 28, color: COLORS.greenButton }} />}
           title="OIDC"
           subtitle="OpenID Connect + PKCE"
           description="Authorization Code flow s PKCE (S256)."
           onClick={() => setProtocol('oidc')}
         />
-        <SelectionCard
-          icon={<BadgeIcon sx={{ fontSize: 40, color: SKODA_GREEN }} />}
+        <ProtocolCard
+          icon={<BadgeIcon sx={{ fontSize: 28, color: COLORS.greenButton }} />}
           title="SAML 2.0"
           subtitle="HTTP Redirect Binding"
           description="SP-initiated SSO s deflate + base64 AuthnRequest."
           onClick={() => setProtocol('saml')}
         />
-      </Stack>
+      </Box>
     </Container>
   );
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Stage 3: výběr úrovně autentizace
+  // Stage 3: výběr úrovně autentizace (pill tlačítka v zelená/oranžová/červená)
   // ──────────────────────────────────────────────────────────────────────────
 
   const renderClientTypeSelector = () => {
     const onLogin = (t: ClientType) => protocol === 'saml' ? loginWithSaml(t) : loginWithOidc(t);
     return (
-      <Container maxWidth="md" sx={{ py: { xs: 4, md: 8 } }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={handleBack} sx={{ mb: 3 }}>
-          Změnit protokol
-        </Button>
+      <Container maxWidth="sm" sx={{ py: { xs: 3, md: 5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+          <BackChip label="Zpět" />
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.greenStatus }} />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {envConfig?.label}
+          </Typography>
+          <Typography variant="body2" sx={{ color: COLORS.textMuted }}>·</Typography>
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {protocol === 'saml' ? 'SAML 2.0' : 'OIDC'}
+          </Typography>
+        </Stack>
 
-        <Stack alignItems="center" spacing={1} sx={{ mb: 4, textAlign: 'center' }}>
-          <Typography variant="h4" sx={{ fontWeight: 700 }}>Vyberte úroveň autentizace</Typography>
-          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-            <Chip size="small" label={envConfig?.label} sx={{ bgcolor: SKODA_GREEN, color: '#0e3a2f', fontWeight: 700 }} />
-            <Chip size="small" label={protocol === 'saml' ? 'SAML 2.0' : 'OIDC'} variant="outlined" />
+        <Card variant="outlined" sx={{ borderColor: COLORS.border, borderRadius: 2, p: { xs: 3, md: 4 } }}>
+          <Stack spacing={0.5} sx={{ mb: 3, textAlign: 'center' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+              Login to Demo app
+            </Typography>
+            <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+              Vyberte úroveň autentizace
+            </Typography>
           </Stack>
-        </Stack>
 
-        {errorMsg && (
-          <Box sx={{ mb: 3 }}>
-            <Banner variant="error">{errorMsg}</Banner>
-          </Box>
-        )}
+          {errorMsg && (
+            <Box sx={{ mb: 3 }}>
+              <Banner variant="error">{errorMsg}</Banner>
+            </Box>
+          )}
 
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="center">
-          <SelectionCard
-            icon={<ShieldIcon sx={{ fontSize: 40, color: '#9ccc65' }} />}
-            title="1FA"
-            subtitle="Weak client"
-            description="Pouze heslo (LoA 1)."
-            onClick={() => onLogin('1FA')}
-          />
-          <SelectionCard
-            icon={<ShieldIcon sx={{ fontSize: 40, color: '#ff9800' }} />}
-            title="2FA"
-            subtitle="Medium client"
-            description="Heslo + druhý faktor (LoA 2)."
-            onClick={() => onLogin('2FA')}
-          />
-          <SelectionCard
-            icon={<VerifiedUserIcon sx={{ fontSize: 40, color: '#f44336' }} />}
-            title="3FA"
-            subtitle="Strong client"
-            description="Heslo + 2 faktory (LoA 3)."
-            onClick={() => onLogin('3FA')}
-          />
-        </Stack>
+          <Stack spacing={1.5}>
+            <PillButton
+              onClick={() => onLogin('1FA')}
+              bg={COLORS.greenButton}
+              hoverBg={COLORS.greenButtonHover}
+              text="#fff"
+              label="Weak client (1FA)"
+            />
+            <PillButton
+              onClick={() => onLogin('2FA')}
+              bg={COLORS.amber}
+              hoverBg={COLORS.amberHover}
+              text={COLORS.textPrimary}
+              label="Medium client (2FA)"
+            />
+            <PillButton
+              onClick={() => onLogin('3FA')}
+              bg={COLORS.red}
+              hoverBg={COLORS.redHover}
+              text="#fff"
+              label="Strong client (3FA)"
+            />
+          </Stack>
+        </Card>
 
         {process.env.NODE_ENV === 'development' && envConfig && (
-          <Box sx={{ mt: 4 }}>
-            <Accordion>
+          <Box sx={{ mt: 3 }}>
+            <Accordion sx={{ bgcolor: 'transparent', boxShadow: 'none', '&:before': { display: 'none' } }}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">Debug informace</Typography>
+                <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary }}>
+                  Debug informace
+                </Typography>
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={0.5}>
@@ -824,15 +914,55 @@ const App: React.FC = () => {
       : oidcClientIdFor(envConfig, usedClientType ?? '1FA');
 
     return (
-      <Container maxWidth="md" sx={{ py: { xs: 4, md: 6 } }}>
-        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-          <Chip size="small" label={envConfig.label} sx={{ bgcolor: SKODA_GREEN, color: '#0e3a2f', fontWeight: 700 }} />
-          <Chip size="small" label={protocol === 'saml' ? 'SAML 2.0' : 'OIDC'} variant="outlined" />
-          {usedClientType && <Chip size="small" label={`${usedClientType} client`} variant="outlined" />}
+      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.greenStatus }} />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {envConfig.label}
+          </Typography>
+          <Typography variant="body2" sx={{ color: COLORS.textMuted }}>·</Typography>
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {protocol === 'saml' ? 'SAML 2.0' : 'OIDC'}
+          </Typography>
+          {usedClientType && (
+            <>
+              <Typography variant="body2" sx={{ color: COLORS.textMuted }}>·</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                {usedClientType}
+              </Typography>
+            </>
+          )}
         </Stack>
 
-        <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>Úspěšně přihlášen</Typography>
-        <Typography variant="body1" sx={{ opacity: 0.75, mb: 3 }}>Vítejte, {userInfo.name}!</Typography>
+        {/* Status banner: úspěšné přihlášení */}
+        <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
+          <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: '20px !important' }}>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                bgcolor: COLORS.greenStatus,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: 20,
+                fontWeight: 700,
+              }}
+            >
+              ✓
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                Úspěšně přihlášen
+              </Typography>
+              <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                Vítejte, {userInfo.name}
+              </Typography>
+            </Box>
+          </CardContent>
+        </Card>
 
         {errorMsg && (
           <Box sx={{ mb: 3 }}>
@@ -840,10 +970,15 @@ const App: React.FC = () => {
           </Box>
         )}
 
-        <Card variant="outlined" sx={{ mb: 3 }}>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 2 }}>Informace o uživateli</Typography>
-            <Stack spacing={1.5} divider={<Divider flexItem />}>
+        {/* Informace o uživateli */}
+        <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
+          <CardContent sx={{ p: 0 }}>
+            <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${COLORS.border}` }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                Informace o uživateli
+              </Typography>
+            </Box>
+            <Stack divider={<Divider />}>
               <InfoRow label="Celé jméno" value={userInfo.name} />
               <InfoRow label="Email" value={userInfo.email} />
               <InfoRow label="Uživatelské jméno" value={userInfo.preferred_username || 'N/A'} />
@@ -856,7 +991,7 @@ const App: React.FC = () => {
                       <>
                         <code>{formatAMR(userInfo.amr || [])}</code>
                         {userInfo.amr && userInfo.amr.length > 0 && (
-                          <Typography variant="caption" sx={{ ml: 1, opacity: 0.6 }}>
+                          <Typography variant="caption" sx={{ ml: 1, color: COLORS.textMuted }}>
                             [{userInfo.amr.join(', ')}]
                           </Typography>
                         )}
@@ -870,11 +1005,16 @@ const App: React.FC = () => {
           </CardContent>
         </Card>
 
+        {/* SAML atributy */}
         {protocol === 'saml' && samlAttributes && (
-          <Card variant="outlined" sx={{ mb: 3 }}>
-            <CardContent>
-              <Typography variant="h6" sx={{ mb: 2 }}>SAML Assertion atributy</Typography>
-              <Stack spacing={1.5} divider={<Divider flexItem />}>
+          <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${COLORS.border}` }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                  SAML Assertion atributy
+                </Typography>
+              </Box>
+              <Stack divider={<Divider />}>
                 {Object.entries(samlAttributes).map(([key, value]) => (
                   <InfoRow
                     key={key}
@@ -885,21 +1025,23 @@ const App: React.FC = () => {
               </Stack>
 
               {samlRawXml && (
-                <Box sx={{ mt: 2 }}>
-                  <Accordion>
+                <Box sx={{ p: 2 }}>
+                  <Accordion sx={{ bgcolor: 'transparent', boxShadow: 'none', '&:before': { display: 'none' } }}>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle2">Raw SAML XML</Typography>
+                      <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary }}>Raw SAML XML</Typography>
                     </AccordionSummary>
                     <AccordionDetails>
                       <Box
                         component="pre"
                         sx={{
-                          bgcolor: 'rgba(0,0,0,0.04)',
+                          bgcolor: '#1a1a1a',
+                          color: '#e0e0e0',
                           p: 2,
                           borderRadius: 1,
-                          fontSize: 12,
+                          fontSize: 11,
                           overflow: 'auto',
                           maxHeight: 360,
+                          fontFamily: '"SF Mono", Monaco, "Cascadia Code", Consolas, monospace',
                         }}
                       >
                         {samlRawXml}
@@ -912,32 +1054,50 @@ const App: React.FC = () => {
           </Card>
         )}
 
+        {/* Logout buttony */}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
           <Button
             onClick={logoutSSO}
             variant="contained"
-            size="large"
             startIcon={<LogoutIcon />}
-            sx={{ borderRadius: 50, fontWeight: 700, px: 3, bgcolor: SKODA_GREEN, color: '#0e3a2f', '&:hover': { bgcolor: '#5fe899' } }}
+            sx={{
+              borderRadius: '24px',
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              bgcolor: COLORS.greenButton,
+              color: '#fff',
+              '&:hover': { bgcolor: COLORS.greenButtonHover },
+            }}
           >
             Odhlásit ze SSO (IdP)
           </Button>
           <Button
             onClick={logoutLocal}
             variant="outlined"
-            size="large"
             startIcon={<LogoutIcon />}
-            sx={{ borderRadius: 50, fontWeight: 600, px: 3 }}
+            sx={{
+              borderRadius: '24px',
+              fontWeight: 600,
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              borderColor: COLORS.border,
+              color: COLORS.textSecondary,
+              '&:hover': { borderColor: COLORS.greenButton, bgcolor: COLORS.greenStatusBg, color: COLORS.greenStatusText },
+            }}
           >
             Odhlásit z aplikace
           </Button>
         </Stack>
 
+        {/* Debug */}
         {process.env.NODE_ENV === 'development' && (
-          <Box sx={{ mt: 4 }}>
-            <Accordion>
+          <Box sx={{ mt: 3 }}>
+            <Accordion sx={{ bgcolor: 'transparent', boxShadow: 'none', '&:before': { display: 'none' } }}>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">Debug informace</Typography>
+                <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary }}>Debug informace</Typography>
               </AccordionSummary>
               <AccordionDetails>
                 <Stack spacing={0.5}>
@@ -954,7 +1114,7 @@ const App: React.FC = () => {
                   {protocol === 'oidc' && (
                     <Typography variant="caption">
                       <strong>Metadata:</strong>{' '}
-                      <a href={wellKnownUrl} target="_blank" rel="noreferrer">.well-known</a>
+                      <a href={wellKnownUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.greenButton }}>.well-known</a>
                     </Typography>
                   )}
                 </Stack>
@@ -970,64 +1130,185 @@ const App: React.FC = () => {
 
   return (
     <SkodaThemeProvider globalBaseline>
-      <PageLayout header={headerNode} footer={footerNode}>
-        {renderContent()}
-      </PageLayout>
+      <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: COLORS.bg }}>
+        {topBar}
+        <Box sx={{ flex: 1 }}>{renderContent()}</Box>
+        {bottomBar}
+      </Box>
     </SkodaThemeProvider>
   );
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pomocné komponenty
+// Pomocné komponenty (kcmonitor styl)
 // ──────────────────────────────────────────────────────────────────────────────
 
-interface SelectionCardProps {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  description?: string;
+// EnvCard — karta prostředí ve stylu kcmonitor EnvironmentCard:
+// silný 2px border, status dot + label nahoře, drobné chips s realm, hover = zelený border.
+interface EnvCardProps {
+  label: string;
+  realm: string;
+  host: string;
   onClick: () => void;
 }
 
-const SelectionCard: React.FC<SelectionCardProps> = ({ icon, title, subtitle, description, onClick }) => (
+const EnvCard: React.FC<EnvCardProps> = ({ label, realm, host, onClick }) => (
   <Card
-    variant="outlined"
     sx={{
-      flex: 1,
-      borderRadius: 3,
-      transition: 'transform 0.15s, box-shadow 0.15s, border-color 0.15s',
+      border: `2px solid ${COLORS.border}`,
+      borderRadius: 2,
+      bgcolor: COLORS.surface,
+      transition: 'border-color 0.2s, box-shadow 0.2s',
       '&:hover': {
-        transform: 'translateY(-2px)',
-        boxShadow: 3,
-        borderColor: SKODA_GREEN,
+        borderColor: COLORS.greenStatus,
+        boxShadow: '0 4px 12px rgba(74, 217, 100, 0.15)',
       },
     }}
   >
-    <CardActionArea onClick={onClick} sx={{ p: 3, height: '100%' }}>
-      <Stack alignItems="center" spacing={1.5} sx={{ textAlign: 'center' }}>
-        {icon}
-        <Typography variant="h5" sx={{ fontWeight: 700 }}>{title}</Typography>
-        <Typography variant="subtitle2" sx={{ opacity: 0.85 }}>{subtitle}</Typography>
-        {description && (
-          <Typography variant="body2" sx={{ opacity: 0.65, mt: 0.5 }}>{description}</Typography>
-        )}
-      </Stack>
+    <CardActionArea onClick={onClick}>
+      <CardContent sx={{ py: 2.5, px: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Box
+            sx={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              bgcolor: COLORS.greenStatus,
+              boxShadow: `0 0 6px ${COLORS.greenStatus}`,
+            }}
+          />
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem', color: COLORS.textPrimary }}>
+            {label}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={0.75} sx={{ mb: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
+          <Chip
+            label={realm}
+            size="small"
+            variant="outlined"
+            sx={{ height: 20, fontSize: '0.68rem', borderColor: COLORS.border, color: COLORS.textSecondary }}
+          />
+        </Stack>
+        <Typography variant="caption" sx={{ color: COLORS.textMuted, fontSize: '0.72rem', wordBreak: 'break-all' }}>
+          {host}
+        </Typography>
+      </CardContent>
     </CardActionArea>
   </Card>
 );
 
+// ProtocolCard — větší vodorovná karta s ikonkou vlevo.
+interface ProtocolCardProps {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  description: string;
+  onClick: () => void;
+}
+
+const ProtocolCard: React.FC<ProtocolCardProps> = ({ icon, title, subtitle, description, onClick }) => (
+  <Card
+    sx={{
+      border: `2px solid ${COLORS.border}`,
+      borderRadius: 2,
+      bgcolor: COLORS.surface,
+      transition: 'border-color 0.2s, box-shadow 0.2s',
+      '&:hover': {
+        borderColor: COLORS.greenStatus,
+        boxShadow: '0 4px 12px rgba(74, 217, 100, 0.15)',
+      },
+    }}
+  >
+    <CardActionArea onClick={onClick}>
+      <CardContent sx={{ display: 'flex', gap: 2, py: 2.5, px: 2.5, alignItems: 'center' }}>
+        <Box
+          sx={{
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            bgcolor: COLORS.greenStatusBg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.05rem', color: COLORS.textPrimary, lineHeight: 1.2 }}>
+            {title}
+          </Typography>
+          <Typography variant="caption" sx={{ color: COLORS.textSecondary, display: 'block', mt: 0.25 }}>
+            {subtitle}
+          </Typography>
+          <Typography variant="caption" sx={{ color: COLORS.textMuted, display: 'block', mt: 0.5, fontSize: '0.72rem' }}>
+            {description}
+          </Typography>
+        </Box>
+      </CardContent>
+    </CardActionArea>
+  </Card>
+);
+
+// PillButton — výrazné barevné pill tlačítko pro 1FA/2FA/3FA.
+interface PillButtonProps {
+  label: string;
+  bg: string;
+  hoverBg: string;
+  text: string;
+  onClick: () => void;
+}
+
+const PillButton: React.FC<PillButtonProps> = ({ label, bg, hoverBg, text, onClick }) => (
+  <Button
+    onClick={onClick}
+    fullWidth
+    sx={{
+      bgcolor: bg,
+      color: text,
+      borderRadius: '50px',
+      py: 1.5,
+      fontWeight: 700,
+      fontSize: '1rem',
+      textTransform: 'none',
+      boxShadow: 'none',
+      '&:hover': { bgcolor: hoverBg, boxShadow: 'none' },
+    }}
+  >
+    {label}
+  </Button>
+);
+
+// InfoRow — řádek s labelem a hodnotou, padding místo Stack-spacingu (vypadá víc tabulkově).
 interface InfoRowProps {
   label: string;
   value: React.ReactNode;
 }
 
 const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
-  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
-    <Typography variant="body2" sx={{ minWidth: 180, opacity: 0.7 }}>{label}:</Typography>
+  <Box
+    sx={{
+      display: 'flex',
+      flexDirection: { xs: 'column', sm: 'row' },
+      alignItems: { xs: 'flex-start', sm: 'center' },
+      gap: { xs: 0.5, sm: 2 },
+      px: 3,
+      py: 1.5,
+    }}
+  >
+    <Typography
+      variant="body2"
+      sx={{ minWidth: 180, color: COLORS.textSecondary, fontSize: '0.85rem' }}
+    >
+      {label}
+    </Typography>
     <Box sx={{ flex: 1, wordBreak: 'break-word' }}>
-      {typeof value === 'string' ? <Typography variant="body2">{value}</Typography> : value}
+      {typeof value === 'string'
+        ? <Typography variant="body2" sx={{ color: COLORS.textPrimary, fontSize: '0.9rem' }}>{value}</Typography>
+        : value}
     </Box>
-  </Stack>
+  </Box>
 );
 
 export default App;

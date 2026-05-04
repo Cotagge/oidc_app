@@ -2,7 +2,7 @@
   "environments": {
     "DEV": {
       "label": "DEV",
-      "url": "https://identity.dskoda.vwgroup.com/",
+      "url": "https://identity.dskoda.vwgroup.com",
       "realm": "standard",
       "oidcClient1F": "test-client-oidc-demo-1f",
       "oidcClient2F": "test-client-oidc-demo-2f",
@@ -13,7 +13,7 @@
     },
     "TEST": {
       "label": "TEST",
-      "url": "https://identity.tskoda.vwgroup.com/",
+      "url": "https://identity.tskoda.vwgroup.com",
       "realm": "standard",
       "oidcClient1F": "test-client-oidc-demo-1f",
       "oidcClient2F": "test-client-oidc-demo-2f",
@@ -24,7 +24,7 @@
     },
     "PROD": {
       "label": "PROD",
-      "url": "https://identity.skoda.vwgroup.com/",
+      "url": "https://identity.skoda.vwgroup.com",
       "realm": "standard",
       "oidcClient1F": "test-client-oidc-demo-1f",
       "oidcClient2F": "test-client-oidc-demo-2f",
