@@ -2,36 +2,36 @@
   "environments": {
     "DEV": {
       "label": "DEV",
-      "url": "https://your-keycloak-dev.example.com",
-      "realm": "your-realm-dev",
-      "oidcClient1F": "test-client-oidc-demo_v2-1f",
-      "oidcClient2F": "test-client-oidc-demo_v2-2f",
-      "oidcClient3F": "test-client-oidc-demo_v2-3f",
+      "url": "https://identity.dskoda.vwgroup.com/",
+      "realm": "standard",
+      "oidcClient1F": "test-client-oidc-demo-1f",
+      "oidcClient2F": "test-client-oidc-demo-2f",
+      "oidcClient3F": "test-client-oidc-demo-3f",
       "samlClient1F": "test-client-saml-demo-1f",
       "samlClient2F": "test-client-saml-demo-2f",
       "samlClient3F": "test-client-saml-demo-3f"
     },
     "TEST": {
       "label": "TEST",
-      "url": "https://your-keycloak-test.example.com",
-      "realm": "your-realm-test",
-      "oidcClient1F": "test-client-oidc-demo_v2-1f",
-      "oidcClient2F": "test-client-oidc-demo_v2-2f",
-      "oidcClient3F": "test-client-oidc-demo_v2-3f",
+      "url": "https://identity.tskoda.vwgroup.com/",
+      "realm": "standard",
+      "oidcClient1F": "test-client-oidc-demo-1f",
+      "oidcClient2F": "test-client-oidc-demo-2f",
+      "oidcClient3F": "test-client-oidc-demo-3f",
       "samlClient1F": "test-client-saml-demo-1f",
       "samlClient2F": "test-client-saml-demo-2f",
       "samlClient3F": "test-client-saml-demo-3f"
     },
     "PROD": {
       "label": "PROD",
-      "url": "https://your-keycloak-prod.example.com",
-      "realm": "your-realm-prod",
-      "oidcClient1F": "prod-client-oidc-1f",
-      "oidcClient2F": "prod-client-oidc-2f",
-      "oidcClient3F": "prod-client-oidc-3f",
-      "samlClient1F": "prod-client-saml-1f",
-      "samlClient2F": "prod-client-saml-2f",
-      "samlClient3F": "prod-client-saml-3f"
+      "url": "https://identity.skoda.vwgroup.com/",
+      "realm": "standard",
+      "oidcClient1F": "test-client-oidc-demo-1f",
+      "oidcClient2F": "test-client-oidc-demo-2f",
+      "oidcClient3F": "test-client-oidc-demo-3f",
+      "samlClient1F": "test-client-saml-demo-1f",
+      "samlClient2F": "test-client-saml-demo-2f",
+      "samlClient3F": "test-client-saml-demo-3f"
     }
   }
 }
