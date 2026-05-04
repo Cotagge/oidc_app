@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { deflateRaw, inflateRaw } from 'pako';
-import { SkodaThemeProvider, Logo } from '@skodaflow/web-library';
+import { SkodaThemeProvider, Banner } from '@skodaflow/web-library';
+import Box from '@mui/material/Box';
+import Container from '@mui/material/Container';
+import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
+import Typography from '@mui/material/Typography';
+import Card from '@mui/material/Card';
+import CardActionArea from '@mui/material/CardActionArea';
+import CardContent from '@mui/material/CardContent';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
+import CircularProgress from '@mui/material/CircularProgress';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import LogoutIcon from '@mui/icons-material/Logout';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
+import BadgeIcon from '@mui/icons-material/Badge';
 import './App.css';
 
-// TypeScript interface pro uživatelské informace
+// ── Typy ──────────────────────────────────────────────────────────────────────
+
 interface UserInfo {
   name: string;
   email: string;
@@ -16,61 +35,118 @@ interface UserInfo {
   amr?: string[];
 }
 
-// TypeScript interface pro Keycloak konfiguraci
-interface KeycloakConfig {
-  url: string;
-  realm: string;
-  clientId1F: string;
-  clientId2F: string;
-  clientId3F: string;
-  samlClientId1F: string;
-  samlClientId2F: string;
-  samlClientId3F: string;
-}
-
-// Atributy ze SAML assertion
 interface SamlAttributes {
   [key: string]: string | string[];
 }
 
+interface EnvConfig {
+  label: string;
+  url: string;
+  realm: string;
+  oidcClient1F: string;
+  oidcClient2F: string;
+  oidcClient3F: string;
+  samlClient1F: string;
+  samlClient2F: string;
+  samlClient3F: string;
+}
+
+interface AppConfig {
+  environments: { [key: string]: EnvConfig };
+}
+
 type Protocol = 'oidc' | 'saml' | null;
 type ClientType = '1FA' | '2FA' | '3FA';
+type Stage = 'env' | 'protocol' | 'clientType';
+
+// ── Konstanty ─────────────────────────────────────────────────────────────────
+
+// Paleta inspirovaná kcmonitor: tlumená zelená pro buttony/loga,
+// status zelená pro indikátory, oranžová a červená pro 2FA / 3FA hierarchii.
+const COLORS = {
+  greenButton: '#3aaf57',        // primary (buttony, loga, hover border)
+  greenButtonHover: '#2d9448',
+  greenStatus: '#4cd964',        // status dot, success
+  greenStatusBg: '#e8fbed',      // pastel pro chip pozadí
+  greenStatusText: '#1a7a32',
+  amber: '#f5a623',              // 2FA medium
+  amberHover: '#e09600',
+  red: '#e74c3c',                // 3FA strong / chyby
+  redHover: '#c0392b',
+  redBg: '#fdecea',
+  textPrimary: '#1a1a1a',
+  textSecondary: '#6b6b6b',
+  textMuted: '#9a9a9a',
+  border: '#e5e5e5',
+  bg: '#f5f5f5',
+  surface: '#ffffff',
+};
+
+const STORAGE_ENV_KEY = 'sip_demo_env';
+
+// ── Helpers pro výběr clientId podle typu ────────────────────────────────────
+
+const oidcClientIdFor = (env: EnvConfig, t: ClientType): string =>
+  t === '3FA' ? env.oidcClient3F : t === '2FA' ? env.oidcClient2F : env.oidcClient1F;
+
+const samlClientIdFor = (env: EnvConfig, t: ClientType): string =>
+  t === '3FA' ? env.samlClient3F : t === '2FA' ? env.samlClient2F : env.samlClient1F;
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  const [selectedEnv, setSelectedEnv] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<Protocol>(null);
+  const [usedClientType, setUsedClientType] = useState<ClientType | null>(null);
+
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [samlAttributes, setSamlAttributes] = useState<SamlAttributes | null>(null);
   const [samlRawXml, setSamlRawXml] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
-  const [usedClientType, setUsedClientType] = useState<ClientType | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const KEYCLOAK_CONFIG: KeycloakConfig = useMemo(() => ({
-    url: process.env.REACT_APP_KEYCLOAK_URL || 'https://your-keycloak-server.com',
-    realm: process.env.REACT_APP_KEYCLOAK_REALM || 'your-realm',
-    clientId1F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_1F || 'test-client-oidc-demo_v2-1f',
-    clientId2F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_2F || 'test-client-oidc-demo_v2-2f',
-    clientId3F: process.env.REACT_APP_KEYCLOAK_CLIENT_ID_3F || 'test-client-oidc-demo_v2-3f',
-    samlClientId1F: process.env.REACT_APP_KEYCLOAK_SAML_CLIENT_ID_1F || 'test-client-saml-demo-1f',
-    samlClientId2F: process.env.REACT_APP_KEYCLOAK_SAML_CLIENT_ID_2F || 'test-client-saml-demo-2f',
-    samlClientId3F: process.env.REACT_APP_KEYCLOAK_SAML_CLIENT_ID_3F || 'test-client-saml-demo-3f',
-  }), []);
+  // Aktivní env config
+  const envConfig: EnvConfig | null = useMemo(() => {
+    if (!config || !selectedEnv) return null;
+    return config.environments[selectedEnv] ?? null;
+  }, [config, selectedEnv]);
 
-  const wellKnownUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/.well-known/openid-configuration`;
+  // Stage: kde v rozcestníku se uživatel nachází (před přihlášením)
+  const stage: Stage = !selectedEnv ? 'env' : !protocol ? 'protocol' : 'clientType';
 
-  // ── PKCE helper funkce ──────────────────────────────────────────────────────
+  // ── Načtení runtime config ────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetch('/config.json', { cache: 'no-store' })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Nelze načíst config.json (${res.status})`);
+        return res.json();
+      })
+      .then((cfg: AppConfig) => {
+        setConfig(cfg);
+        // Pokus o obnovení dříve zvoleného env
+        const stored = localStorage.getItem(STORAGE_ENV_KEY);
+        if (stored && cfg.environments[stored]) {
+          setSelectedEnv(stored);
+        }
+      })
+      .catch((err) => {
+        setConfigError(err instanceof Error ? err.message : 'Neznámá chyba');
+      });
+  }, []);
+
+  // ── PKCE helpers ──────────────────────────────────────────────────────────
 
   const generateCodeVerifier = useCallback((): string => {
     const array = new Uint8Array(32);
     crypto.getRandomValues(array);
     let result = '';
-    for (let i = 0; i < array.length; i++) {
-      result += String.fromCharCode(array[i]);
-    }
-    return btoa(result)
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
+    for (let i = 0; i < array.length; i++) result += String.fromCharCode(array[i]);
+    return btoa(result).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   }, []);
 
   const generateCodeChallenge = useCallback(async (verifier: string): Promise<string> => {
@@ -79,27 +155,18 @@ const App: React.FC = () => {
     const digest = await crypto.subtle.digest('SHA-256', data);
     const hashArray = new Uint8Array(digest);
     let result = '';
-    for (let i = 0; i < hashArray.length; i++) {
-      result += String.fromCharCode(hashArray[i]);
-    }
-    return btoa(result)
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
+    for (let i = 0; i < hashArray.length; i++) result += String.fromCharCode(hashArray[i]);
+    return btoa(result).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   }, []);
 
-  // ── OIDC flow ───────────────────────────────────────────────────────────────
+  // ── OIDC flow ─────────────────────────────────────────────────────────────
 
-  const fetchUserInfo = useCallback(async (accessToken: string): Promise<void> => {
+  const fetchUserInfo = useCallback(async (env: EnvConfig, accessToken: string): Promise<void> => {
     try {
-      const userInfoUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/userinfo`;
-      const userInfoResponse = await fetch(userInfoUrl, {
-        headers: { 'Authorization': `Bearer ${accessToken}` }
-      });
-      if (!userInfoResponse.ok) {
-        throw new Error(`UserInfo request failed: ${userInfoResponse.status} ${userInfoResponse.statusText}`);
-      }
-      const userData = await userInfoResponse.json();
+      const userInfoUrl = `${env.url}/realms/${env.realm}/protocol/openid-connect/userinfo`;
+      const res = await fetch(userInfoUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) throw new Error(`UserInfo request failed: ${res.status} ${res.statusText}`);
+      const userData = await res.json();
       const info: UserInfo = {
         name: userData.name || `${userData.given_name || ''} ${userData.family_name || ''}`.trim() || userData.preferred_username || 'Neznámý uživatel',
         email: userData.email || 'N/A',
@@ -108,7 +175,7 @@ const App: React.FC = () => {
         family_name: userData.family_name || 'N/A',
         sub: userData.sub || 'N/A',
         acr: userData.acr || 'N/A',
-        amr: userData.amr || []
+        amr: userData.amr || [],
       };
       setIsAuthenticated(true);
       setUserInfo(info);
@@ -117,29 +184,12 @@ const App: React.FC = () => {
       localStorage.removeItem('used_auth_code');
       setLoading(false);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Neznámá chyba';
-      if (window.location.hostname === 'localhost' && errorMessage.includes('401')) {
-        setIsAuthenticated(true);
-        setUserInfo({
-          name: 'Test Uživatel (Fallback)',
-          email: 'test@localhost.com',
-          preferred_username: 'test.user',
-          given_name: 'Test',
-          family_name: 'Uživatel',
-          sub: 'localhost-test-user',
-          acr: 'N/A',
-          amr: ['pwd']
-        });
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setLoading(false);
-        return;
-      }
-      alert(`Chyba při získávání informací o uživateli: ${errorMessage}`);
+      setErrorMsg(`Chyba při získávání informací o uživateli: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
       setLoading(false);
     }
-  }, [KEYCLOAK_CONFIG]);
+  }, []);
 
-  const parseUserInfoFromIdToken = useCallback((idToken: string): void => {
+  const parseUserInfoFromIdToken = useCallback((env: EnvConfig, idToken: string): void => {
     try {
       const tokenParts = idToken.split('.');
       if (tokenParts.length !== 3) throw new Error('Neplatný ID token formát');
@@ -152,7 +202,7 @@ const App: React.FC = () => {
         family_name: payload.family_name || 'N/A',
         sub: payload.sub || 'N/A',
         acr: payload.acr || 'N/A',
-        amr: payload.amr || []
+        amr: payload.amr || [],
       };
       setIsAuthenticated(true);
       setUserInfo(info);
@@ -162,20 +212,16 @@ const App: React.FC = () => {
       setLoading(false);
     } catch {
       const accessToken = localStorage.getItem('access_token');
-      if (accessToken) {
-        fetchUserInfo(accessToken);
-      } else {
-        setLoading(false);
-      }
+      if (accessToken) fetchUserInfo(env, accessToken);
+      else setLoading(false);
     }
   }, [fetchUserInfo]);
 
-  const exchangeCodeForToken = useCallback(async (code: string, clientType: ClientType): Promise<void> => {
+  const exchangeCodeForToken = useCallback(async (env: EnvConfig, code: string, clientType: ClientType): Promise<void> => {
     try {
-      const tokenUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/token`;
+      const tokenUrl = `${env.url}/realms/${env.realm}/protocol/openid-connect/token`;
       const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
-      const clientId = clientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
-                       clientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
+      const clientId = oidcClientIdFor(env, clientType);
       const codeVerifier = localStorage.getItem('code_verifier');
       if (!codeVerifier) throw new Error('Code verifier not found in localStorage');
 
@@ -187,8 +233,8 @@ const App: React.FC = () => {
           client_id: clientId,
           code,
           redirect_uri: redirectUri,
-          code_verifier: codeVerifier
-        })
+          code_verifier: codeVerifier,
+        }),
       });
 
       if (!tokenResponse.ok) {
@@ -208,29 +254,26 @@ const App: React.FC = () => {
       setUsedClientType(clientType);
       setProtocol('oidc');
 
-      if (tokens.id_token) {
-        parseUserInfoFromIdToken(tokens.id_token);
-      } else {
-        await fetchUserInfo(tokens.access_token);
-      }
+      if (tokens.id_token) parseUserInfoFromIdToken(env, tokens.id_token);
+      else await fetchUserInfo(env, tokens.access_token);
     } catch (error) {
-      alert(`Chyba při dokončování přihlášení: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
+      setErrorMsg(`Chyba při dokončování přihlášení: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
       setLoading(false);
     }
-  }, [KEYCLOAK_CONFIG, parseUserInfoFromIdToken, fetchUserInfo]);
+  }, [parseUserInfoFromIdToken, fetchUserInfo]);
 
   const loginWithOidc = useCallback(async (clientType: ClientType): Promise<void> => {
+    if (!envConfig) return;
     try {
       const codeVerifier = generateCodeVerifier();
       const codeChallenge = await generateCodeChallenge(codeVerifier);
       localStorage.setItem('code_verifier', codeVerifier);
       localStorage.setItem('code_challenge', codeChallenge);
 
-      const clientId = clientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
-                       clientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
+      const clientId = oidcClientIdFor(envConfig, clientType);
       const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
 
-      const authUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/auth` +
+      const authUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/auth` +
         `?client_id=${encodeURIComponent(clientId)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
@@ -243,35 +286,28 @@ const App: React.FC = () => {
 
       window.location.href = authUrl;
     } catch (error) {
-      alert('Chyba při přípravě přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
+      setErrorMsg('Chyba při přípravě přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
     }
-  }, [KEYCLOAK_CONFIG, generateCodeVerifier, generateCodeChallenge]);
+  }, [envConfig, generateCodeVerifier, generateCodeChallenge]);
 
-  // ── SAML flow ───────────────────────────────────────────────────────────────
+  // ── SAML flow ─────────────────────────────────────────────────────────────
 
   const loginWithSaml = useCallback(async (clientType: ClientType): Promise<void> => {
+    if (!envConfig) return;
     try {
-      const samlClientId = clientType === '3FA' ? KEYCLOAK_CONFIG.samlClientId3F :
-                           clientType === '2FA' ? KEYCLOAK_CONFIG.samlClientId2F : KEYCLOAK_CONFIG.samlClientId1F;
-
+      const samlClientId = samlClientIdFor(envConfig, clientType);
       const acsUrl = `${window.location.origin}?client_type=${clientType}&amp;protocol=saml`;
-      const issuer = samlClientId;
-
-      // Sestavení AuthnRequest XML
       const requestId = '_' + Math.random().toString(36).substring(2, 18);
       const issueInstant = new Date().toISOString();
-      const authnRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}" AssertionConsumerServiceURL="${acsUrl}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"><saml:Issuer>${issuer}</saml:Issuer></samlp:AuthnRequest>`;
+      const authnRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}" AssertionConsumerServiceURL="${acsUrl}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"><saml:Issuer>${samlClientId}</saml:Issuer></samlp:AuthnRequest>`;
 
-      // Deflate + base64 (HTTP Redirect binding)
-      // Standard base64 (ne URL-safe) + encodeURIComponent pro URL
       const deflated = deflateRaw(authnRequest);
       let deflatedStr = '';
       for (let i = 0; i < deflated.length; i++) deflatedStr += String.fromCharCode(deflated[i]);
       const samlRequest = encodeURIComponent(btoa(deflatedStr));
 
       const relayState = encodeURIComponent(`client_type=${clientType}`);
-      const samlEndpoint = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/saml`;
-
+      const samlEndpoint = `${envConfig.url}/realms/${envConfig.realm}/protocol/saml`;
       const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}&RelayState=${relayState}`;
 
       localStorage.setItem('saml_client_type', clientType);
@@ -279,11 +315,10 @@ const App: React.FC = () => {
 
       window.location.href = redirectUrl;
     } catch (error) {
-      alert('Chyba při přípravě SAML přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
+      setErrorMsg('Chyba při přípravě SAML přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
     }
-  }, [KEYCLOAK_CONFIG]);
+  }, [envConfig]);
 
-  // Parsování SAMLResponse z URL (redirect binding — response je jako GET parametr)
   const parseSamlCallback = useCallback((): void => {
     const urlParams = new URLSearchParams(window.location.search);
     const samlResponse = urlParams.get('SAMLResponse');
@@ -291,57 +326,41 @@ const App: React.FC = () => {
     const clientType = (urlParams.get('client_type') || localStorage.getItem('saml_client_type') || '1FA') as ClientType;
 
     if (samlError) {
-      alert(`Chyba při SAML přihlášení: ${samlError}`);
+      setErrorMsg(`Chyba při SAML přihlášení: ${samlError}`);
       setLoading(false);
       return;
     }
-
-    if (!samlResponse) {
-      setLoading(false);
-      return;
-    }
+    if (!samlResponse) { setLoading(false); return; }
 
     try {
-      // SAMLResponse = base64(deflateRaw(XML)) — Keycloak komprimuje response
       const binaryStr = atob(samlResponse);
       const bytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-      // Zkus inflateRaw (komprimovaná response), fallback na plain XML
       let xmlString: string;
-      try {
-        xmlString = new TextDecoder('utf-8').decode(inflateRaw(bytes));
-      } catch {
-        xmlString = new TextDecoder('utf-8').decode(bytes);
-      }
+      try { xmlString = new TextDecoder('utf-8').decode(inflateRaw(bytes)); }
+      catch { xmlString = new TextDecoder('utf-8').decode(bytes); }
 
       setSamlRawXml(xmlString);
 
-      // Parsování XML
       const parser = new DOMParser();
       const xmlDoc = parser.parseFromString(xmlString, 'application/xml');
-
-      // Kontrola chyby parsování
       const parseError = xmlDoc.querySelector('parsererror');
       if (parseError) throw new Error('Chyba při parsování SAML XML');
 
-      // NameID
       const nameId = xmlDoc.querySelector('NameID')?.textContent || 'N/A';
 
-      // Atributy z Assertion — mergujeme duplicitní Name (např. Role)
       const attrs: SamlAttributes = {};
-      xmlDoc.querySelectorAll('Attribute').forEach(attr => {
+      xmlDoc.querySelectorAll('Attribute').forEach((attr) => {
         const name = attr.getAttribute('Name') || attr.getAttribute('FriendlyName') || 'unknown';
-        const values = Array.from(attr.querySelectorAll('AttributeValue')).map(v => v.textContent || '');
+        const values = Array.from(attr.querySelectorAll('AttributeValue')).map((v) => v.textContent || '');
         if (attrs[name]) {
-          // Merguj s existujícími hodnotami
-          const existing = Array.isArray(attrs[name]) ? attrs[name] as string[] : [attrs[name] as string];
+          const existing = Array.isArray(attrs[name]) ? (attrs[name] as string[]) : [attrs[name] as string];
           attrs[name] = [...existing, ...values];
         } else {
           attrs[name] = values.length === 1 ? values[0] : values;
         }
       });
 
-      // Základní info z assertion
       const conditions = xmlDoc.querySelector('Conditions');
       const authnStatement = xmlDoc.querySelector('AuthnStatement');
       const authnContext = xmlDoc.querySelector('AuthnContextClassRef')?.textContent?.trim() || 'N/A';
@@ -349,7 +368,6 @@ const App: React.FC = () => {
       const notBefore = conditions?.getAttribute('NotBefore') || 'N/A';
       const notOnOrAfter = conditions?.getAttribute('NotOnOrAfter') || 'N/A';
 
-      // Meta-info jako první položky pro zobrazení (krátké klíče bez __)
       attrs['__NameID'] = nameId;
       attrs['__AuthnContext'] = authnContext;
       attrs['__SessionIndex'] = sessionIndex;
@@ -358,28 +376,27 @@ const App: React.FC = () => {
 
       setSamlAttributes(attrs);
 
-      // Vytvoříme UserInfo z SAML atributů
       const getAttr = (key: string): string => {
         const val = attrs[key];
         return Array.isArray(val) ? val[0] : val || 'N/A';
       };
 
       const fullName = getAttr('displayName') !== 'N/A' ? getAttr('displayName') :
-                       getAttr('cn') !== 'N/A' ? getAttr('cn') :
-                       (getAttr('givenName') !== 'N/A' || getAttr('sn') !== 'N/A')
-                         ? `${getAttr('givenName')} ${getAttr('sn')}`.trim()
-                         : nameId;
+        getAttr('cn') !== 'N/A' ? getAttr('cn') :
+          (getAttr('givenName') !== 'N/A' || getAttr('sn') !== 'N/A')
+            ? `${getAttr('givenName')} ${getAttr('sn')}`.trim()
+            : nameId;
 
       const info: UserInfo = {
         name: fullName,
         email: getAttr('email') !== 'N/A' ? getAttr('email') : getAttr('mail') !== 'N/A' ? getAttr('mail') : 'N/A',
         preferred_username: getAttr('uid') !== 'N/A' ? getAttr('uid') :
-                            getAttr('samAccountName') !== 'N/A' ? getAttr('samAccountName') : nameId,
+          getAttr('samAccountName') !== 'N/A' ? getAttr('samAccountName') : nameId,
         given_name: getAttr('givenName') !== 'N/A' ? getAttr('givenName') : nameId,
         family_name: getAttr('sn') || 'N/A',
         sub: nameId,
         acr: authnContext,
-        amr: []
+        amr: [],
       };
 
       setIsAuthenticated(true);
@@ -396,55 +413,86 @@ const App: React.FC = () => {
       window.history.replaceState({}, document.title, window.location.pathname);
       setLoading(false);
     } catch (error) {
-      alert(`Chyba při zpracování SAML response: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
+      setErrorMsg(`Chyba při zpracování SAML response: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
       setLoading(false);
     }
   }, []);
 
-  // ── Logout ──────────────────────────────────────────────────────────────────
+  // ── Logout ────────────────────────────────────────────────────────────────
 
-  const logout = useCallback(async (): Promise<void> => {
-    const accessToken = localStorage.getItem('access_token');
-    const refreshToken = localStorage.getItem('refresh_token');
-    const usedProto = localStorage.getItem('used_protocol') as Protocol;
-
-    localStorage.clear();
+  // Reset React stavu (storage maže volající)
+  const resetClientState = useCallback((): void => {
     setIsAuthenticated(false);
     setUserInfo(null);
     setUsedClientType(null);
     setSamlAttributes(null);
     setSamlRawXml(null);
     setProtocol(null);
-
-    if (usedProto === 'oidc' && refreshToken) {
-      try {
-        const logoutUrl = `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}/protocol/openid-connect/logout`;
-        const clientId = usedClientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
-                         usedClientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F;
-        await fetch(logoutUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
-          },
-          body: new URLSearchParams({ client_id: clientId, refresh_token: refreshToken })
-        });
-      } catch (error) {
-        console.warn('Backchannel logout selhal:', error);
-      }
-    }
-  }, [KEYCLOAK_CONFIG, usedClientType]);
-
-  // ── Inicializace ────────────────────────────────────────────────────────────
-
-  const checkAuthStatus = useCallback((): void => {
-    // Rozcestník je vždy mandatory — žádná automatická obnova session z localStorage.
-    // Vyčistíme případná stará data a zobrazíme rozcestník.
-    localStorage.clear();
-    setLoading(false);
   }, []);
 
+  // Vyčistí jen storage (ponechá zvolené env, aby se uživatel nevracel na začátek)
+  const clearAuthStorage = useCallback((): void => {
+    const keysToKeep = new Set([STORAGE_ENV_KEY]);
+    Object.keys(localStorage).forEach((k) => {
+      if (!keysToKeep.has(k)) localStorage.removeItem(k);
+    });
+    sessionStorage.clear();
+  }, []);
+
+  const logoutLocal = useCallback((): void => {
+    clearAuthStorage();
+    resetClientState();
+  }, [clearAuthStorage, resetClientState]);
+
+  const logoutSSO = useCallback((): void => {
+    if (!envConfig) { logoutLocal(); return; }
+    const usedProto = localStorage.getItem('used_protocol') as Protocol;
+
+    if (usedProto === 'oidc') {
+      const idToken = localStorage.getItem('id_token');
+      const clientId = oidcClientIdFor(envConfig, usedClientType ?? '1FA');
+      const params = new URLSearchParams({
+        client_id: clientId,
+        post_logout_redirect_uri: window.location.origin,
+        ...(idToken ? { id_token_hint: idToken } : {}),
+      });
+      const logoutUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/logout?${params.toString()}`;
+      clearAuthStorage();
+      resetClientState();
+      window.location.href = logoutUrl;
+      return;
+    }
+
+    if (usedProto === 'saml') {
+      const samlClientId = samlClientIdFor(envConfig, usedClientType ?? '1FA');
+      const nameId = userInfo?.sub || '';
+      const requestId = '_' + Math.random().toString(36).substring(2, 18);
+      const issueInstant = new Date().toISOString();
+      const logoutRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:LogoutRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}"><saml:Issuer>${samlClientId}</saml:Issuer><saml:NameID>${nameId}</saml:NameID></samlp:LogoutRequest>`;
+      const deflated = deflateRaw(logoutRequest);
+      let deflatedStr = '';
+      for (let i = 0; i < deflated.length; i++) deflatedStr += String.fromCharCode(deflated[i]);
+      const samlRequest = encodeURIComponent(btoa(deflatedStr));
+      const samlEndpoint = `${envConfig.url}/realms/${envConfig.realm}/protocol/saml`;
+      const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}`;
+      clearAuthStorage();
+      resetClientState();
+      window.location.href = redirectUrl;
+      return;
+    }
+
+    logoutLocal();
+  }, [envConfig, usedClientType, userInfo, clearAuthStorage, resetClientState, logoutLocal]);
+
+  // ── Inicializace / callback handling ──────────────────────────────────────
+
+  const checkAuthStatus = useCallback((): void => {
+    clearAuthStorage();
+    setLoading(false);
+  }, [clearAuthStorage]);
+
   const parseKeycloakCallback = useCallback((): void => {
+    if (!envConfig) { setLoading(false); return; }
     const urlParams = new URLSearchParams(window.location.search);
     const proto = urlParams.get('protocol');
 
@@ -453,14 +501,13 @@ const App: React.FC = () => {
       return;
     }
 
-    // OIDC callback
     const code = urlParams.get('code');
     const error = urlParams.get('error');
     const errorDescription = urlParams.get('error_description');
-    const clientType = urlParams.get('client_type') as ClientType || '1FA';
+    const clientType = (urlParams.get('client_type') as ClientType) || '1FA';
 
     if (error) {
-      alert(`Chyba při přihlášení: ${error}\n${errorDescription || ''}`);
+      setErrorMsg(`Chyba při přihlášení: ${error}\n${errorDescription || ''}`);
       setLoading(false);
       return;
     }
@@ -468,308 +515,800 @@ const App: React.FC = () => {
       const usedCode = localStorage.getItem('used_auth_code');
       if (usedCode === code) { setLoading(false); return; }
       localStorage.setItem('used_auth_code', code);
-      exchangeCodeForToken(code, clientType);
+      exchangeCodeForToken(envConfig, code, clientType);
       return;
     }
     setLoading(false);
-  }, [exchangeCodeForToken, parseSamlCallback]);
+  }, [envConfig, exchangeCodeForToken, parseSamlCallback]);
 
+  // Spustíme až po načtení config — pokud je v URL callback, potřebujeme env config
   useEffect(() => {
+    if (!config) return;
     const urlParams = new URLSearchParams(window.location.search);
     const hasCallback = urlParams.has('code') || urlParams.has('error') ||
-                        urlParams.has('SAMLResponse') || urlParams.has('SAMLError') ||
-                        (urlParams.has('protocol') && urlParams.get('protocol') === 'saml');
-    if (hasCallback) {
-      parseKeycloakCallback();
-    } else {
-      checkAuthStatus();
-    }
-  }, [parseKeycloakCallback, checkAuthStatus]);
+      urlParams.has('SAMLResponse') || urlParams.has('SAMLError') ||
+      (urlParams.has('protocol') && urlParams.get('protocol') === 'saml');
 
-  // ── Pomocné funkce ──────────────────────────────────────────────────────────
+    if (hasCallback && envConfig) parseKeycloakCallback();
+    else checkAuthStatus();
+  }, [config, envConfig, parseKeycloakCallback, checkAuthStatus]);
+
+  // Persistence zvoleného env
+  useEffect(() => {
+    if (selectedEnv) localStorage.setItem(STORAGE_ENV_KEY, selectedEnv);
+  }, [selectedEnv]);
+
+  // ── UI helpery ────────────────────────────────────────────────────────────
 
   const formatAMR = useCallback((amr: string[]): string => {
     if (!amr || amr.length === 0) return 'N/A';
-    const amrMappings: { [key: string]: string } = {
-      'pwd': 'Heslo', 'sms': 'SMS kód', 'otp': 'OTP token', 'mfa': 'Multifaktor',
-      'sc': 'Smart Card', 'cert': 'Certifikát', 'x509': 'X.509 Certifikát',
-      'webauthn': 'WebAuthn', 'fido': 'FIDO', 'u2f': 'U2F'
+    const map: { [key: string]: string } = {
+      pwd: 'Heslo', sms: 'SMS kód', otp: 'OTP token', mfa: 'Multifaktor',
+      sc: 'Smart Card', cert: 'Certifikát', x509: 'X.509 Certifikát',
+      webauthn: 'WebAuthn', fido: 'FIDO', u2f: 'U2F',
     };
-    return amr.map(method => amrMappings[method] || method.toUpperCase()).join(', ');
+    return amr.map((m) => map[m] || m.toUpperCase()).join(', ');
   }, []);
 
-  const clearAllData = (): void => {
-    localStorage.clear();
-    sessionStorage.clear();
-    window.location.reload();
+  const handleSelectEnv = (env: string) => {
+    setSelectedEnv(env);
+    setProtocol(null);
+    setUsedClientType(null);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const handleResetEnv = () => {
+    localStorage.removeItem(STORAGE_ENV_KEY);
+    clearAuthStorage();
+    resetClientState();
+    setSelectedEnv(null);
+  };
 
-  if (loading) {
+  const handleBack = () => {
+    if (stage === 'clientType') setProtocol(null);
+    else if (stage === 'protocol') handleResetEnv();
+  };
+
+  // ── Společné kusy layoutu ─────────────────────────────────────────────────
+
+  // Kompaktní top bar (nepoužívá Skoda Header — to by zdvojovalo logo).
+  // Vlevo: název appky + drobný status dot, vpravo: chip aktivního prostředí.
+  const topBar = (
+    <Box
+      sx={{
+        bgcolor: COLORS.surface,
+        borderBottom: `1px solid ${COLORS.border}`,
+        px: { xs: 2, md: 4 },
+        py: 1.5,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box
+          sx={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            bgcolor: envConfig ? COLORS.greenStatus : COLORS.textMuted,
+            boxShadow: envConfig ? `0 0 6px ${COLORS.greenStatus}` : 'none',
+          }}
+        />
+        <Typography
+          component="button"
+          onClick={handleResetEnv}
+          sx={{
+            fontWeight: 700,
+            fontSize: '1rem',
+            color: COLORS.textPrimary,
+            background: 'none',
+            border: 'none',
+            p: 0,
+            cursor: 'pointer',
+            letterSpacing: 0.2,
+            '&:hover': { color: COLORS.greenButton },
+          }}
+        >
+          SIP Demo App
+        </Typography>
+      </Box>
+      {envConfig && (
+        <Chip
+          label={envConfig.label}
+          size="small"
+          sx={{
+            bgcolor: COLORS.greenStatusBg,
+            color: COLORS.greenStatusText,
+            fontWeight: 700,
+            letterSpacing: 0.5,
+            fontSize: '0.72rem',
+          }}
+        />
+      )}
+    </Box>
+  );
+
+  // Tenký řádek místo dark Footeru.
+  const bottomBar = (
+    <Box
+      sx={{
+        borderTop: `1px solid ${COLORS.border}`,
+        bgcolor: COLORS.surface,
+        px: { xs: 2, md: 4 },
+        py: 1.25,
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 1,
+        flexWrap: 'wrap',
+      }}
+    >
+      <Typography variant="caption" sx={{ color: COLORS.textMuted, fontSize: '0.72rem' }}>
+        © {new Date().getFullYear()} ŠKODA AUTO — SIP Demo App
+      </Typography>
+      <Typography variant="caption" sx={{ color: COLORS.textMuted, fontSize: '0.72rem' }}>
+        {envConfig ? `${envConfig.label} · ${envConfig.realm}` : 'Není zvoleno prostředí'}
+      </Typography>
+    </Box>
+  );
+
+  // ── Loading / config error guard ──────────────────────────────────────────
+
+  if (configError) {
     return (
       <SkodaThemeProvider globalBaseline>
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <p>Načítám...</p>
-        </div>
+        <Container maxWidth="sm" sx={{ py: 8 }}>
+          <Banner variant="error">
+            <Typography variant="h6" sx={{ mb: 1 }}>Chyba načtení konfigurace</Typography>
+            <Typography variant="body2">{configError}</Typography>
+            <Typography variant="caption" sx={{ mt: 1, display: 'block' }}>
+              Zkontroluj soubor <code>public/config.json</code>.
+            </Typography>
+          </Banner>
+        </Container>
       </SkodaThemeProvider>
     );
   }
 
-  // Přihlášený uživatel
-  if (isAuthenticated && userInfo) {
+  if (!config || loading) {
     return (
       <SkodaThemeProvider globalBaseline>
-      <div className="app">
-        <main className="main-content">
-          <div className="login-container">
-            <div className="skoda-logo">
-              <Logo color="#4caf50" width={120} />
-              {process.env.REACT_APP_KEYCLOAK_ENV && (
-                <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
-              )}
-            </div>
-            <div className="login-card">
-              <div className="protocol-badge-row">
-                <span className={`protocol-badge ${protocol === 'saml' ? 'protocol-badge-saml' : 'protocol-badge-oidc'}`}>
-                  {protocol === 'saml' ? 'SAML 2.0' : 'OIDC'}
-                </span>
-                {usedClientType && (
-                  <span className={`auth-badge ${usedClientType === '1FA' ? 'auth-1fa' : usedClientType === '2FA' ? 'auth-2fa' : 'auth-3fa'}`}>
-                    {usedClientType} Client
-                  </span>
-                )}
-              </div>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 2, bgcolor: COLORS.bg }}>
+          <CircularProgress sx={{ color: COLORS.greenButton }} />
+          <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>Načítám…</Typography>
+        </Box>
+      </SkodaThemeProvider>
+    );
+  }
 
-              <h2>Úspěšně přihlášen</h2>
-              <p className="login-subtitle">Vítejte, {userInfo.name}!</p>
+  // ── Render obsah podle stavu ──────────────────────────────────────────────
 
-              <div className="user-info-section">
-                <h3>Informace o uživateli</h3>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span className="info-label">Celé jméno:</span>
-                    <span className="info-value">{userInfo.name}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Email:</span>
-                    <span className="info-value">{userInfo.email}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Uživatelské jméno:</span>
-                    <span className="info-value">{userInfo.preferred_username}</span>
-                  </div>
-                  {protocol === 'oidc' && (
+  const renderContent = () => {
+    if (isAuthenticated && userInfo) return renderAuthenticated();
+    if (stage === 'env') return renderEnvSelector();
+    if (stage === 'protocol') return renderProtocolSelector();
+    return renderClientTypeSelector();
+  };
+
+  // Univerzální chip-back tlačítko ve stylu kcmonitor.
+  const BackChip: React.FC<{ label: string }> = ({ label }) => (
+    <Button
+      onClick={handleBack}
+      startIcon={<ArrowBackIcon sx={{ fontSize: 16 }} />}
+      sx={{
+        height: 32,
+        borderRadius: '16px',
+        bgcolor: COLORS.greenStatusBg,
+        color: COLORS.greenStatusText,
+        fontWeight: 700,
+        textTransform: 'none',
+        px: 1.5,
+        fontSize: '0.78rem',
+        '&:hover': { bgcolor: '#d4f4dd' },
+      }}
+    >
+      {label}
+    </Button>
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Stage 1: výběr prostředí
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const renderEnvSelector = () => (
+    <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+      <Stack spacing={0.5} sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+          Vyberte prostředí
+        </Typography>
+        <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+          Zvolte Keycloak (IdP), proti kterému chcete demonstrovat přihlášení.
+        </Typography>
+      </Stack>
+
+      {errorMsg && (
+        <Box sx={{ mb: 3 }}>
+          <Banner variant="error">{errorMsg}</Banner>
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' },
+          gap: 2,
+        }}
+      >
+        {Object.entries(config.environments).map(([key, env]) => (
+          <EnvCard
+            key={key}
+            label={env.label}
+            realm={env.realm}
+            host={env.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+            onClick={() => handleSelectEnv(key)}
+          />
+        ))}
+      </Box>
+    </Container>
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Stage 2: výběr protokolu
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const renderProtocolSelector = () => (
+    <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+        <BackChip label="Zpět" />
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.greenStatus }} />
+        <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+          {envConfig?.label}
+        </Typography>
+      </Stack>
+
+      <Stack spacing={0.5} sx={{ mb: 4 }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+          Vyberte protokol
+        </Typography>
+        <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+          OIDC nebo SAML 2.0 — vybraný protokol určuje login flow.
+        </Typography>
+      </Stack>
+
+      {errorMsg && (
+        <Box sx={{ mb: 3 }}>
+          <Banner variant="error">{errorMsg}</Banner>
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+          gap: 2,
+        }}
+      >
+        <ProtocolCard
+          icon={<VpnKeyIcon sx={{ fontSize: 28, color: COLORS.greenButton }} />}
+          title="OIDC"
+          subtitle="OpenID Connect + PKCE"
+          description="Authorization Code flow s PKCE (S256)."
+          onClick={() => setProtocol('oidc')}
+        />
+        <ProtocolCard
+          icon={<BadgeIcon sx={{ fontSize: 28, color: COLORS.greenButton }} />}
+          title="SAML 2.0"
+          subtitle="HTTP Redirect Binding"
+          description="SP-initiated SSO s deflate + base64 AuthnRequest."
+          onClick={() => setProtocol('saml')}
+        />
+      </Box>
+    </Container>
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Stage 3: výběr úrovně autentizace (pill tlačítka v zelená/oranžová/červená)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const renderClientTypeSelector = () => {
+    const onLogin = (t: ClientType) => protocol === 'saml' ? loginWithSaml(t) : loginWithOidc(t);
+    return (
+      <Container maxWidth="sm" sx={{ py: { xs: 3, md: 5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+          <BackChip label="Zpět" />
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.greenStatus }} />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {envConfig?.label}
+          </Typography>
+          <Typography variant="body2" sx={{ color: COLORS.textMuted }}>·</Typography>
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {protocol === 'saml' ? 'SAML 2.0' : 'OIDC'}
+          </Typography>
+        </Stack>
+
+        <Card variant="outlined" sx={{ borderColor: COLORS.border, borderRadius: 2, p: { xs: 3, md: 4 } }}>
+          <Stack spacing={0.5} sx={{ mb: 3, textAlign: 'center' }}>
+            <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+              Login to Demo app
+            </Typography>
+            <Typography variant="body2" sx={{ color: COLORS.textSecondary }}>
+              Vyberte úroveň autentizace
+            </Typography>
+          </Stack>
+
+          {errorMsg && (
+            <Box sx={{ mb: 3 }}>
+              <Banner variant="error">{errorMsg}</Banner>
+            </Box>
+          )}
+
+          <Stack spacing={1.5}>
+            <PillButton
+              onClick={() => onLogin('1FA')}
+              bg={COLORS.greenButton}
+              hoverBg={COLORS.greenButtonHover}
+              text="#fff"
+              label="Weak client (1FA)"
+            />
+            <PillButton
+              onClick={() => onLogin('2FA')}
+              bg={COLORS.amber}
+              hoverBg={COLORS.amberHover}
+              text={COLORS.textPrimary}
+              label="Medium client (2FA)"
+            />
+            <PillButton
+              onClick={() => onLogin('3FA')}
+              bg={COLORS.red}
+              hoverBg={COLORS.redHover}
+              text="#fff"
+              label="Strong client (3FA)"
+            />
+          </Stack>
+        </Card>
+
+        {process.env.NODE_ENV === 'development' && envConfig && (
+          <Box sx={{ mt: 3 }}>
+            <Accordion sx={{ bgcolor: 'transparent', boxShadow: 'none', '&:before': { display: 'none' } }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary }}>
+                  Debug informace
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Stack spacing={0.5}>
+                  <Typography variant="caption"><strong>Protokol:</strong> {protocol}</Typography>
+                  <Typography variant="caption"><strong>SkodaIDP URL:</strong> {envConfig.url}</Typography>
+                  <Typography variant="caption"><strong>Realm:</strong> {envConfig.realm}</Typography>
+                  {protocol === 'oidc' ? (
                     <>
-                      <div className="info-item">
-                        <span className="info-label">ACR Level:</span>
-                        <span className="info-value"><code>{userInfo.acr}</code></span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">AMR (Metody ověření):</span>
-                        <span className="info-value">
-                          <code>{formatAMR(userInfo.amr || [])}</code>
-                          {userInfo.amr && userInfo.amr.length > 0 && (
-                            <span className="amr-details">[{userInfo.amr.join(', ')}]</span>
-                          )}
-                        </span>
-                      </div>
+                      <Typography variant="caption"><strong>1FA Client:</strong> {envConfig.oidcClient1F}</Typography>
+                      <Typography variant="caption"><strong>2FA Client:</strong> {envConfig.oidcClient2F}</Typography>
+                      <Typography variant="caption"><strong>3FA Client:</strong> {envConfig.oidcClient3F}</Typography>
+                    </>
+                  ) : (
+                    <>
+                      <Typography variant="caption"><strong>1FA SAML Client:</strong> {envConfig.samlClient1F}</Typography>
+                      <Typography variant="caption"><strong>2FA SAML Client:</strong> {envConfig.samlClient2F}</Typography>
+                      <Typography variant="caption"><strong>3FA SAML Client:</strong> {envConfig.samlClient3F}</Typography>
                     </>
                   )}
-                  <div className="info-item">
-                    <span className="info-label">Použitý klient:</span>
-                    <span className="info-value status-active">
-                      {protocol === 'saml'
-                        ? (usedClientType === '3FA' ? KEYCLOAK_CONFIG.samlClientId3F :
-                           usedClientType === '2FA' ? KEYCLOAK_CONFIG.samlClientId2F : KEYCLOAK_CONFIG.samlClientId1F)
-                        : (usedClientType === '3FA' ? KEYCLOAK_CONFIG.clientId3F :
-                           usedClientType === '2FA' ? KEYCLOAK_CONFIG.clientId2F : KEYCLOAK_CONFIG.clientId1F)
-                      }
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* SAML Atributy */}
-              {protocol === 'saml' && samlAttributes && (
-                <div className="saml-attributes-section">
-                  <h3>SAML Assertion atributy</h3>
-                  <div className="info-grid">
-                    {Object.entries(samlAttributes).map(([key, value]) => (
-                      <div className="info-item" key={key}>
-                        <span className="info-label saml-attr-key">
-                          {key.startsWith('__') ? key.replace('__', '') : key}:
-                        </span>
-                        <span className="info-value">
-                          <code>{Array.isArray(value) ? value.join(', ') : value}</code>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {samlRawXml && (
-                    <details className="saml-xml-details">
-                      <summary>Zobrazit raw SAML XML</summary>
-                      <pre className="saml-xml-pre">{samlRawXml}</pre>
-                    </details>
-                  )}
-                </div>
-              )}
-
-              <div className="auth-buttons">
-                <Button onClick={logout} variant="contained" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#4caf50', color: '#1a1a1a', '&:hover': { bgcolor: '#43d350' } }}>
-                  Odhlásit se
-                </Button>
-                {process.env.NODE_ENV === 'development' && (
-                  <Button onClick={clearAllData} variant="outlined" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, fontSize: 15, py: 1.5, borderColor: '#ccc', color: '#555', '&:hover': { borderColor: '#999', bgcolor: '#f5f5f5' } }}>
-                    Vymazat data (debug)
-                  </Button>
-                )}
-              </div>
-
-              {process.env.NODE_ENV === 'development' && (
-                <div className="debug-info">
-                  <h4>Debug informace:</h4>
-                  <div><strong>Protokol:</strong> {protocol}</div>
-                  <div><strong>Sub / NameID:</strong> {userInfo.sub}</div>
-                  <div><strong>ACR:</strong> {userInfo.acr}</div>
-                  {protocol === 'oidc' && <div><strong>AMR:</strong> {userInfo.amr ? JSON.stringify(userInfo.amr) : 'N/A'}</div>}
-                  <div><strong>Použitý Client:</strong> {usedClientType}</div>
-                  <div><strong>Realm:</strong> {KEYCLOAK_CONFIG.realm}</div>
-                  {protocol === 'oidc' && (
-                    <div><strong>Metadata:</strong> <a href={wellKnownUrl} target="_blank" rel="noreferrer">.well-known</a></div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </main>
-      </div>
-      </SkodaThemeProvider>
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          </Box>
+        )}
+      </Container>
     );
-  }
+  };
 
-  // Rozcestník OIDC / SAML
-  if (protocol === null) {
+  // ──────────────────────────────────────────────────────────────────────────
+  // Stage 4: přihlášený uživatel
+  // ──────────────────────────────────────────────────────────────────────────
+
+  const renderAuthenticated = () => {
+    if (!userInfo || !envConfig) return null;
+    const wellKnownUrl = `${envConfig.url}/realms/${envConfig.realm}/.well-known/openid-configuration`;
+    const usedClient = protocol === 'saml'
+      ? samlClientIdFor(envConfig, usedClientType ?? '1FA')
+      : oidcClientIdFor(envConfig, usedClientType ?? '1FA');
+
     return (
-      <SkodaThemeProvider globalBaseline>
-      <div className="app">
-        <main className="main-content">
-          <div className="login-container">
-            <div className="skoda-logo">
-              <Logo color="#4caf50" width={120} />
-              {process.env.REACT_APP_KEYCLOAK_ENV && (
-                <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
+      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: COLORS.greenStatus }} />
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {envConfig.label}
+          </Typography>
+          <Typography variant="body2" sx={{ color: COLORS.textMuted }}>·</Typography>
+          <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+            {protocol === 'saml' ? 'SAML 2.0' : 'OIDC'}
+          </Typography>
+          {usedClientType && (
+            <>
+              <Typography variant="body2" sx={{ color: COLORS.textMuted }}>·</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                {usedClientType}
+              </Typography>
+            </>
+          )}
+        </Stack>
+
+        {/* Status banner: úspěšné přihlášení */}
+        <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
+          <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: '20px !important' }}>
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                bgcolor: COLORS.greenStatus,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: 20,
+                fontWeight: 700,
+              }}
+            >
+              ✓
+            </Box>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                Úspěšně přihlášen
+              </Typography>
+              <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                Vítejte, {userInfo.name}
+              </Typography>
+            </Box>
+          </CardContent>
+        </Card>
+
+        {errorMsg && (
+          <Box sx={{ mb: 3 }}>
+            <Banner variant="error">{errorMsg}</Banner>
+          </Box>
+        )}
+
+        {/* Informace o uživateli */}
+        <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
+          <CardContent sx={{ p: 0 }}>
+            <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${COLORS.border}` }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                Informace o uživateli
+              </Typography>
+            </Box>
+            <Stack divider={<Divider />}>
+              <InfoRow label="Celé jméno" value={userInfo.name} />
+              <InfoRow label="Email" value={userInfo.email} />
+              <InfoRow label="Uživatelské jméno" value={userInfo.preferred_username || 'N/A'} />
+              {protocol === 'oidc' && (
+                <>
+                  <InfoRow label="ACR Level" value={<code>{userInfo.acr}</code>} />
+                  <InfoRow
+                    label="AMR (metody)"
+                    value={
+                      <>
+                        <code>{formatAMR(userInfo.amr || [])}</code>
+                        {userInfo.amr && userInfo.amr.length > 0 && (
+                          <Typography variant="caption" sx={{ ml: 1, color: COLORS.textMuted }}>
+                            [{userInfo.amr.join(', ')}]
+                          </Typography>
+                        )}
+                      </>
+                    }
+                  />
+                </>
               )}
-            </div>
-            <div className="login-card">
-              <h2>Login to Demo app</h2>
-              <p className="login-subtitle">Vyberte protokol pro přihlášení</p>
+              <InfoRow label="Použitý klient" value={<code>{usedClient}</code>} />
+            </Stack>
+          </CardContent>
+        </Card>
 
-              <div className="protocol-selector">
-                <button onClick={() => setProtocol('oidc')} className="btn-protocol btn-protocol-oidc">
-                  <span className="btn-protocol-icon">🔑</span>
-                  <span className="btn-protocol-title">OIDC</span>
-                  <span className="btn-protocol-desc">OpenID Connect + PKCE</span>
-                </button>
+        {/* SAML atributy */}
+        {protocol === 'saml' && samlAttributes && (
+          <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${COLORS.border}` }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                  SAML Assertion atributy
+                </Typography>
+              </Box>
+              <Stack divider={<Divider />}>
+                {Object.entries(samlAttributes).map(([key, value]) => (
+                  <InfoRow
+                    key={key}
+                    label={key.startsWith('__') ? key.replace('__', '') : key}
+                    value={<code>{Array.isArray(value) ? value.join(', ') : value}</code>}
+                  />
+                ))}
+              </Stack>
 
-                <button onClick={() => setProtocol('saml')} className="btn-protocol btn-protocol-saml">
-                  <span className="btn-protocol-icon">🪪</span>
-                  <span className="btn-protocol-title">SAML 2.0</span>
-                  <span className="btn-protocol-desc">HTTP Redirect Binding</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-      </SkodaThemeProvider>
+              {samlRawXml && (
+                <Box sx={{ p: 2 }}>
+                  <Accordion sx={{ bgcolor: 'transparent', boxShadow: 'none', '&:before': { display: 'none' } }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary }}>Raw SAML XML</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box
+                        component="pre"
+                        sx={{
+                          bgcolor: '#1a1a1a',
+                          color: '#e0e0e0',
+                          p: 2,
+                          borderRadius: 1,
+                          fontSize: 11,
+                          overflow: 'auto',
+                          maxHeight: 360,
+                          fontFamily: '"SF Mono", Monaco, "Cascadia Code", Consolas, monospace',
+                        }}
+                      >
+                        {samlRawXml}
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Logout buttony */}
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+          <Button
+            onClick={logoutSSO}
+            variant="contained"
+            startIcon={<LogoutIcon />}
+            sx={{
+              borderRadius: '24px',
+              fontWeight: 700,
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              bgcolor: COLORS.greenButton,
+              color: '#fff',
+              '&:hover': { bgcolor: COLORS.greenButtonHover },
+            }}
+          >
+            Odhlásit ze SSO (IdP)
+          </Button>
+          <Button
+            onClick={logoutLocal}
+            variant="outlined"
+            startIcon={<LogoutIcon />}
+            sx={{
+              borderRadius: '24px',
+              fontWeight: 600,
+              textTransform: 'none',
+              px: 3,
+              py: 1,
+              borderColor: COLORS.border,
+              color: COLORS.textSecondary,
+              '&:hover': { borderColor: COLORS.greenButton, bgcolor: COLORS.greenStatusBg, color: COLORS.greenStatusText },
+            }}
+          >
+            Odhlásit z aplikace
+          </Button>
+        </Stack>
+
+        {/* Debug */}
+        {process.env.NODE_ENV === 'development' && (
+          <Box sx={{ mt: 3 }}>
+            <Accordion sx={{ bgcolor: 'transparent', boxShadow: 'none', '&:before': { display: 'none' } }}>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2" sx={{ color: COLORS.textSecondary }}>Debug informace</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Stack spacing={0.5}>
+                  <Typography variant="caption"><strong>Protokol:</strong> {protocol}</Typography>
+                  <Typography variant="caption"><strong>Sub / NameID:</strong> {userInfo.sub}</Typography>
+                  <Typography variant="caption"><strong>ACR:</strong> {userInfo.acr}</Typography>
+                  {protocol === 'oidc' && (
+                    <Typography variant="caption">
+                      <strong>AMR:</strong> {userInfo.amr ? JSON.stringify(userInfo.amr) : 'N/A'}
+                    </Typography>
+                  )}
+                  <Typography variant="caption"><strong>Použitý Client:</strong> {usedClientType}</Typography>
+                  <Typography variant="caption"><strong>Realm:</strong> {envConfig.realm}</Typography>
+                  {protocol === 'oidc' && (
+                    <Typography variant="caption">
+                      <strong>Metadata:</strong>{' '}
+                      <a href={wellKnownUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.greenButton }}>.well-known</a>
+                    </Typography>
+                  )}
+                </Stack>
+              </AccordionDetails>
+            </Accordion>
+          </Box>
+        )}
+      </Container>
     );
-  }
+  };
 
-  // Výběr klienta (1FA/2FA/3FA) po volbě protokolu
+  // ── Hlavní render ─────────────────────────────────────────────────────────
+
   return (
     <SkodaThemeProvider globalBaseline>
-    <div className="app">
-      <main className="main-content">
-        <div className="login-container">
-          <div className="skoda-logo">
-            <Logo color="#4caf50" width={120} />
-            {process.env.REACT_APP_KEYCLOAK_ENV && (
-              <span className="skoda-env-badge">{process.env.REACT_APP_KEYCLOAK_ENV}</span>
-            )}
-          </div>
-          <div className="login-card">
-            <button onClick={() => setProtocol(null)} className="btn-back">
-              ← Zpět
-            </button>
-
-            <div className="protocol-badge-row">
-              <span className={`protocol-badge ${protocol === 'saml' ? 'protocol-badge-saml' : 'protocol-badge-oidc'}`}>
-                {protocol === 'saml' ? 'SAML 2.0' : 'OIDC'}
-              </span>
-            </div>
-
-            <h2>Login to Demo app</h2>
-            <p className="login-subtitle">Vyberte úroveň autentizace</p>
-
-            <div className="auth-buttons">
-              <Button
-                onClick={() => protocol === 'saml' ? loginWithSaml('1FA') : loginWithOidc('1FA')}
-                variant="contained" fullWidth size="large"
-                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#4caf50', color: '#1a1a1a', '&:hover': { bgcolor: '#43d350' } }}
-              >
-                Weak client (1FA)
-              </Button>
-
-              <Button
-                onClick={() => protocol === 'saml' ? loginWithSaml('2FA') : loginWithOidc('2FA')}
-                variant="contained" fullWidth size="large"
-                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#ff9800', color: '#1a1a1a', '&:hover': { bgcolor: '#ffa726' } }}
-              >
-                Medium client (2FA)
-              </Button>
-
-              <Button
-                onClick={() => protocol === 'saml' ? loginWithSaml('3FA') : loginWithOidc('3FA')}
-                variant="contained" fullWidth size="large"
-                sx={{ borderRadius: '50px', fontWeight: 700, fontSize: 16, py: 1.5, bgcolor: '#f44336', color: '#fff', '&:hover': { bgcolor: '#ef5350' } }}
-              >
-                Strong client (3FA)
-              </Button>
-            </div>
-
-            {process.env.NODE_ENV === 'development' && (
-              <div className="debug-info">
-                <h4>Debug informace:</h4>
-                <div><strong>Protokol:</strong> {protocol}</div>
-                <div><strong>SkodaIDP URL:</strong> {KEYCLOAK_CONFIG.url}</div>
-                <div><strong>Realm:</strong> {KEYCLOAK_CONFIG.realm}</div>
-                {protocol === 'oidc' ? (
-                  <>
-                    <div><strong>1FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId1F}</div>
-                    <div><strong>2FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId2F}</div>
-                    <div><strong>3FA Client ID:</strong> {KEYCLOAK_CONFIG.clientId3F}</div>
-                  </>
-                ) : (
-                  <>
-                    <div><strong>1FA SAML Client:</strong> {KEYCLOAK_CONFIG.samlClientId1F}</div>
-                    <div><strong>2FA SAML Client:</strong> {KEYCLOAK_CONFIG.samlClientId2F}</div>
-                    <div><strong>3FA SAML Client:</strong> {KEYCLOAK_CONFIG.samlClientId3F}</div>
-                  </>
-                )}
-                <Button onClick={clearAllData} variant="outlined" fullWidth size="large" sx={{ borderRadius: '50px', fontWeight: 600, mt: 1, borderColor: '#ccc', color: '#555', '&:hover': { borderColor: '#999', bgcolor: '#f5f5f5' } }}>
-                  Vymazat všechna data (debug)
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-    </div>
+      <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: COLORS.bg }}>
+        {topBar}
+        <Box sx={{ flex: 1 }}>{renderContent()}</Box>
+        {bottomBar}
+      </Box>
     </SkodaThemeProvider>
   );
 };
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Pomocné komponenty (kcmonitor styl)
+// ──────────────────────────────────────────────────────────────────────────────
+
+// EnvCard — karta prostředí ve stylu kcmonitor EnvironmentCard:
+// silný 2px border, status dot + label nahoře, drobné chips s realm, hover = zelený border.
+interface EnvCardProps {
+  label: string;
+  realm: string;
+  host: string;
+  onClick: () => void;
+}
+
+const EnvCard: React.FC<EnvCardProps> = ({ label, realm, host, onClick }) => (
+  <Card
+    sx={{
+      border: `2px solid ${COLORS.border}`,
+      borderRadius: 2,
+      bgcolor: COLORS.surface,
+      transition: 'border-color 0.2s, box-shadow 0.2s',
+      '&:hover': {
+        borderColor: COLORS.greenStatus,
+        boxShadow: '0 4px 12px rgba(74, 217, 100, 0.15)',
+      },
+    }}
+  >
+    <CardActionArea onClick={onClick}>
+      <CardContent sx={{ py: 2.5, px: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <Box
+            sx={{
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              bgcolor: COLORS.greenStatus,
+              boxShadow: `0 0 6px ${COLORS.greenStatus}`,
+            }}
+          />
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.1rem', color: COLORS.textPrimary }}>
+            {label}
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={0.75} sx={{ mb: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
+          <Chip
+            label={realm}
+            size="small"
+            variant="outlined"
+            sx={{ height: 20, fontSize: '0.68rem', borderColor: COLORS.border, color: COLORS.textSecondary }}
+          />
+        </Stack>
+        <Typography variant="caption" sx={{ color: COLORS.textMuted, fontSize: '0.72rem', wordBreak: 'break-all' }}>
+          {host}
+        </Typography>
+      </CardContent>
+    </CardActionArea>
+  </Card>
+);
+
+// ProtocolCard — větší vodorovná karta s ikonkou vlevo.
+interface ProtocolCardProps {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  description: string;
+  onClick: () => void;
+}
+
+const ProtocolCard: React.FC<ProtocolCardProps> = ({ icon, title, subtitle, description, onClick }) => (
+  <Card
+    sx={{
+      border: `2px solid ${COLORS.border}`,
+      borderRadius: 2,
+      bgcolor: COLORS.surface,
+      transition: 'border-color 0.2s, box-shadow 0.2s',
+      '&:hover': {
+        borderColor: COLORS.greenStatus,
+        boxShadow: '0 4px 12px rgba(74, 217, 100, 0.15)',
+      },
+    }}
+  >
+    <CardActionArea onClick={onClick}>
+      <CardContent sx={{ display: 'flex', gap: 2, py: 2.5, px: 2.5, alignItems: 'center' }}>
+        <Box
+          sx={{
+            width: 44,
+            height: 44,
+            borderRadius: '50%',
+            bgcolor: COLORS.greenStatusBg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {icon}
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '1.05rem', color: COLORS.textPrimary, lineHeight: 1.2 }}>
+            {title}
+          </Typography>
+          <Typography variant="caption" sx={{ color: COLORS.textSecondary, display: 'block', mt: 0.25 }}>
+            {subtitle}
+          </Typography>
+          <Typography variant="caption" sx={{ color: COLORS.textMuted, display: 'block', mt: 0.5, fontSize: '0.72rem' }}>
+            {description}
+          </Typography>
+        </Box>
+      </CardContent>
+    </CardActionArea>
+  </Card>
+);
+
+// PillButton — výrazné barevné pill tlačítko pro 1FA/2FA/3FA.
+interface PillButtonProps {
+  label: string;
+  bg: string;
+  hoverBg: string;
+  text: string;
+  onClick: () => void;
+}
+
+const PillButton: React.FC<PillButtonProps> = ({ label, bg, hoverBg, text, onClick }) => (
+  <Button
+    onClick={onClick}
+    fullWidth
+    sx={{
+      bgcolor: bg,
+      color: text,
+      borderRadius: '50px',
+      py: 1.5,
+      fontWeight: 700,
+      fontSize: '1rem',
+      textTransform: 'none',
+      boxShadow: 'none',
+      '&:hover': { bgcolor: hoverBg, boxShadow: 'none' },
+    }}
+  >
+    {label}
+  </Button>
+);
+
+// InfoRow — řádek s labelem a hodnotou, padding místo Stack-spacingu (vypadá víc tabulkově).
+interface InfoRowProps {
+  label: string;
+  value: React.ReactNode;
+}
+
+const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => (
+  <Box
+    sx={{
+      display: 'flex',
+      flexDirection: { xs: 'column', sm: 'row' },
+      alignItems: { xs: 'flex-start', sm: 'center' },
+      gap: { xs: 0.5, sm: 2 },
+      px: 3,
+      py: 1.5,
+    }}
+  >
+    <Typography
+      variant="body2"
+      sx={{ minWidth: 180, color: COLORS.textSecondary, fontSize: '0.85rem' }}
+    >
+      {label}
+    </Typography>
+    <Box sx={{ flex: 1, wordBreak: 'break-word' }}>
+      {typeof value === 'string'
+        ? <Typography variant="body2" sx={{ color: COLORS.textPrimary, fontSize: '0.9rem' }}>{value}</Typography>
+        : value}
+    </Box>
+  </Box>
+);
 
 export default App;

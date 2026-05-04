@@ -1,0 +1,37 @@
+{
+  "environments": {
+    "DEV": {
+      "label": "DEV",
+      "url": "https://identity.dskoda.vwgroup.com",
+      "realm": "standard",
+      "oidcClient1F": "test-client-oidc-demo-1f",
+      "oidcClient2F": "test-client-oidc-demo-2f",
+      "oidcClient3F": "test-client-oidc-demo-3f",
+      "samlClient1F": "test-client-saml-demo-1f",
+      "samlClient2F": "test-client-saml-demo-2f",
+      "samlClient3F": "test-client-saml-demo-3f"
+    },
+    "TEST": {
+      "label": "TEST",
+      "url": "https://identity.tskoda.vwgroup.com",
+      "realm": "standard",
+      "oidcClient1F": "test-client-oidc-demo-1f",
+      "oidcClient2F": "test-client-oidc-demo-2f",
+      "oidcClient3F": "test-client-oidc-demo-3f",
+      "samlClient1F": "test-client-saml-demo-1f",
+      "samlClient2F": "test-client-saml-demo-2f",
+      "samlClient3F": "test-client-saml-demo-3f"
+    },
+    "PROD": {
+      "label": "PROD",
+      "url": "https://identity.skoda.vwgroup.com",
+      "realm": "standard",
+      "oidcClient1F": "test-client-oidc-demo-1f",
+      "oidcClient2F": "test-client-oidc-demo-2f",
+      "oidcClient3F": "test-client-oidc-demo-3f",
+      "samlClient1F": "test-client-saml-demo-1f",
+      "samlClient2F": "test-client-saml-demo-2f",
+      "samlClient3F": "test-client-saml-demo-3f"
+    }
+  }
+}
