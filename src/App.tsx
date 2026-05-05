@@ -21,6 +21,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import BadgeIcon from '@mui/icons-material/Badge';
 import UpgradeIcon from '@mui/icons-material/Upgrade';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import './App.css';
 
 // ── Typy ──────────────────────────────────────────────────────────────────────
@@ -943,6 +944,9 @@ const App: React.FC = () => {
       ? samlClientIdFor(envConfig, usedClientType ?? '1FA')
       : oidcClientIdFor(envConfig, usedClientType ?? '1FA');
 
+    // 2FA a 3FA odemykají citlivá pole; SAML bere jako "elevated", protože ten neřešíme step-upem.
+    const isElevated = usedClientType === '2FA' || usedClientType === '3FA' || protocol === 'saml';
+
     return (
       <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
@@ -1000,37 +1004,89 @@ const App: React.FC = () => {
           </Box>
         )}
 
+        {/* 1FA: upozornění, že část profilu je zamčená za step-upem */}
+        {isElevated === false && protocol === 'oidc' && (
+          <Card
+            variant="outlined"
+            sx={{
+              mb: 3,
+              borderColor: COLORS.amber,
+              borderRadius: 2,
+              bgcolor: '#fff8eb',
+            }}
+          >
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: '16px !important' }}>
+              <LockOutlinedIcon sx={{ color: COLORS.amber, fontSize: 28 }} />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                  Některé údaje jsou skryté
+                </Typography>
+                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                  Pro zobrazení plného profilu proveďte step-up na 2FA.
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Informace o uživateli */}
         <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
           <CardContent sx={{ p: 0 }}>
-            <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${COLORS.border}` }}>
+            <Box
+              sx={{
+                px: 3,
+                py: 2,
+                borderBottom: `1px solid ${COLORS.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1,
+              }}
+            >
               <Typography variant="subtitle1" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
                 Informace o uživateli
               </Typography>
+              <Chip
+                label={isElevated ? 'Plný profil' : 'Veřejné údaje'}
+                size="small"
+                sx={{
+                  bgcolor: isElevated ? COLORS.greenStatusBg : '#fff3d6',
+                  color: isElevated ? COLORS.greenStatusText : '#8a5a00',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: 0.4,
+                }}
+              />
             </Box>
             <Stack divider={<Divider />}>
               <InfoRow label="Celé jméno" value={userInfo.name} />
-              <InfoRow label="Email" value={userInfo.email} />
               <InfoRow label="Uživatelské jméno" value={userInfo.preferred_username || 'N/A'} />
               {protocol === 'oidc' && (
-                <>
-                  <InfoRow label="ACR Level" value={<code>{userInfo.acr}</code>} />
-                  <InfoRow
-                    label="AMR (metody)"
-                    value={
-                      <>
-                        <code>{formatAMR(userInfo.amr || [])}</code>
-                        {userInfo.amr && userInfo.amr.length > 0 && (
-                          <Typography variant="caption" sx={{ ml: 1, color: COLORS.textMuted }}>
-                            [{userInfo.amr.join(', ')}]
-                          </Typography>
-                        )}
-                      </>
-                    }
-                  />
-                </>
+                <InfoRow label="ACR Level" value={<code>{userInfo.acr}</code>} />
               )}
               <InfoRow label="Použitý klient" value={<code>{usedClient}</code>} />
+              {/* Citlivé údaje odemčené step-upem na 2FA+ */}
+              {isElevated && (
+                <>
+                  <InfoRow label="Email" value={userInfo.email} />
+                  <InfoRow label="Sub / NameID" value={<code>{userInfo.sub}</code>} />
+                  {protocol === 'oidc' && (
+                    <InfoRow
+                      label="AMR (metody)"
+                      value={
+                        <>
+                          <code>{formatAMR(userInfo.amr || [])}</code>
+                          {userInfo.amr && userInfo.amr.length > 0 && (
+                            <Typography variant="caption" sx={{ ml: 1, color: COLORS.textMuted }}>
+                              [{userInfo.amr.join(', ')}]
+                            </Typography>
+                          )}
+                        </>
+                      }
+                    />
+                  )}
+                </>
+              )}
             </Stack>
           </CardContent>
         </Card>
