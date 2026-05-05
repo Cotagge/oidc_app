@@ -314,10 +314,13 @@ const App: React.FC = () => {
     }
   }, [envConfig, generateCodeVerifier, generateCodeChallenge]);
 
-  // Step-up z 1FA na 2FA: re-login proti TÉMUŽ 1FA klientovi s acr_values=2.
-  // Keycloak vynutí přidání druhého faktoru (Conditional flow s podmínkou na LoA).
-  const stepUpToTwoFactor = useCallback((): void => {
-    loginWithOidc('1FA', '2');
+  // Step-up: re-login proti STEJNÉMU klientovi s vyšším acr_values.
+  //  - z 1FA na 2FA (acr=2) → Keycloak vyžádá druhý faktor
+  //  - z 2FA na 3FA (acr=3) → Keycloak vyžádá třetí faktor
+  // Conditional flow s podmínkou na LoA musí být nakonfigurovaný na daném klientovi.
+  const stepUp = useCallback((target: '2FA' | '3FA'): void => {
+    if (target === '3FA') loginWithOidc('2FA', '3');
+    else loginWithOidc('1FA', '2');
   }, [loginWithOidc]);
 
   // ── SAML flow ─────────────────────────────────────────────────────────────
@@ -1086,9 +1089,9 @@ const App: React.FC = () => {
 
         {/* Akce: step-up + logout */}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-          {protocol === 'oidc' && usedClientType === '1FA' && (
+          {protocol === 'oidc' && (usedClientType === '1FA' || usedClientType === '2FA') && (
             <Button
-              onClick={stepUpToTwoFactor}
+              onClick={() => stepUp(usedClientType === '1FA' ? '2FA' : '3FA')}
               variant="contained"
               startIcon={<UpgradeIcon />}
               sx={{
@@ -1097,13 +1100,16 @@ const App: React.FC = () => {
                 textTransform: 'none',
                 px: 3,
                 py: 1,
-                bgcolor: COLORS.amber,
-                color: COLORS.textPrimary,
+                bgcolor: usedClientType === '1FA' ? COLORS.amber : COLORS.red,
+                color: usedClientType === '1FA' ? COLORS.textPrimary : '#fff',
                 boxShadow: 'none',
-                '&:hover': { bgcolor: COLORS.amberHover, boxShadow: 'none' },
+                '&:hover': {
+                  bgcolor: usedClientType === '1FA' ? COLORS.amberHover : COLORS.redHover,
+                  boxShadow: 'none',
+                },
               }}
             >
-              Step-up na 2FA
+              {usedClientType === '1FA' ? 'Step-up na 2FA' : 'Step-up na 3FA'}
             </Button>
           )}
           <Button
