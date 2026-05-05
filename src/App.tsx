@@ -102,7 +102,11 @@ const App: React.FC = () => {
 
   const [selectedEnv, setSelectedEnv] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<Protocol>(null);
+  // usedClientType — zobrazená úroveň autentizace (po step-upu se přepíše dle acr claimu).
   const [usedClientType, setUsedClientType] = useState<ClientType | null>(null);
+  // loginClientType — klient, kterému token reálně patří (azp). Pro logout / token endpoint.
+  // Po step-upu zůstává stejný (klient se nemění), zatímco usedClientType odráží nové LoA.
+  const [loginClientType, setLoginClientType] = useState<ClientType | null>(null);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -266,10 +270,12 @@ const App: React.FC = () => {
       }
 
       localStorage.setItem('used_client_type', effectiveType);
+      localStorage.setItem('login_client_type', clientType);
       localStorage.setItem('used_protocol', 'oidc');
       localStorage.removeItem('code_verifier');
       localStorage.removeItem('code_challenge');
       setUsedClientType(effectiveType);
+      setLoginClientType(clientType);
       setProtocol('oidc');
 
       if (tokens.id_token) parseUserInfoFromIdToken(env, tokens.id_token);
@@ -461,6 +467,7 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
     setUserInfo(null);
     setUsedClientType(null);
+    setLoginClientType(null);
     setSamlAttributes(null);
     setSamlRawXml(null);
     setProtocol(null);
@@ -483,10 +490,13 @@ const App: React.FC = () => {
   const logoutSSO = useCallback((): void => {
     if (!envConfig) { logoutLocal(); return; }
     const usedProto = localStorage.getItem('used_protocol') as Protocol;
+    // Logout musí použít klienta, kterému token patří (azp), ne aktuálně zobrazené LoA.
+    // Po step-upu zůstává klient stejný jako při původním loginu, jen acr v tokenu vzroste.
+    const tokenClientType = loginClientType ?? usedClientType ?? '1FA';
 
     if (usedProto === 'oidc') {
       const idToken = localStorage.getItem('id_token');
-      const clientId = oidcClientIdFor(envConfig, usedClientType ?? '1FA');
+      const clientId = oidcClientIdFor(envConfig, tokenClientType);
       const params = new URLSearchParams({
         client_id: clientId,
         post_logout_redirect_uri: window.location.origin,
@@ -500,7 +510,7 @@ const App: React.FC = () => {
     }
 
     if (usedProto === 'saml') {
-      const samlClientId = samlClientIdFor(envConfig, usedClientType ?? '1FA');
+      const samlClientId = samlClientIdFor(envConfig, tokenClientType);
       const nameId = userInfo?.sub || '';
       const requestId = '_' + Math.random().toString(36).substring(2, 18);
       const issueInstant = new Date().toISOString();
@@ -518,7 +528,7 @@ const App: React.FC = () => {
     }
 
     logoutLocal();
-  }, [envConfig, usedClientType, userInfo, clearAuthStorage, resetClientState, logoutLocal]);
+  }, [envConfig, usedClientType, loginClientType, userInfo, clearAuthStorage, resetClientState, logoutLocal]);
 
   // ── Inicializace / callback handling ──────────────────────────────────────
 
