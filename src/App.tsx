@@ -20,6 +20,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LogoutIcon from '@mui/icons-material/Logout';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import BadgeIcon from '@mui/icons-material/Badge';
+import UpgradeIcon from '@mui/icons-material/Upgrade';
 import './App.css';
 
 // ── Typy ──────────────────────────────────────────────────────────────────────
@@ -247,11 +248,24 @@ const App: React.FC = () => {
       localStorage.setItem('access_token', tokens.access_token);
       if (tokens.id_token) localStorage.setItem('id_token', tokens.id_token);
       if (tokens.refresh_token) localStorage.setItem('refresh_token', tokens.refresh_token);
-      localStorage.setItem('used_client_type', clientType);
+
+      // Pokud šlo o step-up, odvodíme efektivní ClientType z acr claimu (acr=2 → 2FA, acr=3 → 3FA).
+      // Klient zůstává 1FA — měníme jen UI label a LoA chip.
+      let effectiveType: ClientType = clientType;
+      if (localStorage.getItem('oidc_stepup_pending') === '1' && tokens.id_token) {
+        try {
+          const payload = JSON.parse(atob(tokens.id_token.split('.')[1]));
+          if (payload.acr === '3' || payload.acr === 3) effectiveType = '3FA';
+          else if (payload.acr === '2' || payload.acr === 2) effectiveType = '2FA';
+        } catch { /* ponecháme původní */ }
+        localStorage.removeItem('oidc_stepup_pending');
+      }
+
+      localStorage.setItem('used_client_type', effectiveType);
       localStorage.setItem('used_protocol', 'oidc');
       localStorage.removeItem('code_verifier');
       localStorage.removeItem('code_challenge');
-      setUsedClientType(clientType);
+      setUsedClientType(effectiveType);
       setProtocol('oidc');
 
       if (tokens.id_token) parseUserInfoFromIdToken(env, tokens.id_token);
@@ -262,7 +276,11 @@ const App: React.FC = () => {
     }
   }, [parseUserInfoFromIdToken, fetchUserInfo]);
 
-  const loginWithOidc = useCallback(async (clientType: ClientType): Promise<void> => {
+  // Pokud je předáno `acrValues`, jde o step-up:
+  //  - přidáme acr_values do auth requestu
+  //  - vynecháme prompt=login a max_age=0, aby Keycloak využil existující SSO session
+  //    a vyžádal jen chybějící faktor (Conditional flow s podmínkou na LoA).
+  const loginWithOidc = useCallback(async (clientType: ClientType, acrValues?: string): Promise<void> => {
     if (!envConfig) return;
     try {
       const codeVerifier = generateCodeVerifier();
@@ -273,22 +291,34 @@ const App: React.FC = () => {
       const clientId = oidcClientIdFor(envConfig, clientType);
       const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
 
-      const authUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/auth` +
+      const isStepUp = !!acrValues;
+      let authUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/auth` +
         `?client_id=${encodeURIComponent(clientId)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
         `&scope=openid profile email microprofile-jwt amr` +
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
-        `&state=${Date.now()}` +
-        `&prompt=login` +
-        `&max_age=0`;
+        `&state=${Date.now()}`;
+
+      if (isStepUp) {
+        authUrl += `&acr_values=${encodeURIComponent(acrValues!)}`;
+        localStorage.setItem('oidc_stepup_pending', '1');
+      } else {
+        authUrl += `&prompt=login&max_age=0`;
+      }
 
       window.location.href = authUrl;
     } catch (error) {
       setErrorMsg('Chyba při přípravě přihlášení: ' + (error instanceof Error ? error.message : 'Neznámá chyba'));
     }
   }, [envConfig, generateCodeVerifier, generateCodeChallenge]);
+
+  // Step-up z 1FA na 2FA: re-login proti TÉMUŽ 1FA klientovi s acr_values=2.
+  // Keycloak vynutí přidání druhého faktoru (Conditional flow s podmínkou na LoA).
+  const stepUpToTwoFactor = useCallback((): void => {
+    loginWithOidc('1FA', '2');
+  }, [loginWithOidc]);
 
   // ── SAML flow ─────────────────────────────────────────────────────────────
 
@@ -1054,8 +1084,28 @@ const App: React.FC = () => {
           </Card>
         )}
 
-        {/* Logout buttony */}
+        {/* Akce: step-up + logout */}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+          {protocol === 'oidc' && usedClientType === '1FA' && (
+            <Button
+              onClick={stepUpToTwoFactor}
+              variant="contained"
+              startIcon={<UpgradeIcon />}
+              sx={{
+                borderRadius: '24px',
+                fontWeight: 700,
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                bgcolor: COLORS.amber,
+                color: COLORS.textPrimary,
+                boxShadow: 'none',
+                '&:hover': { bgcolor: COLORS.amberHover, boxShadow: 'none' },
+              }}
+            >
+              Step-up na 2FA
+            </Button>
+          )}
           <Button
             onClick={logoutSSO}
             variant="contained"
