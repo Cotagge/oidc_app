@@ -250,14 +250,17 @@ const App: React.FC = () => {
       if (tokens.id_token) localStorage.setItem('id_token', tokens.id_token);
       if (tokens.refresh_token) localStorage.setItem('refresh_token', tokens.refresh_token);
 
-      // Pokud šlo o step-up, odvodíme efektivní ClientType z acr claimu (acr=2 → 2FA, acr=3 → 3FA).
+      // Pokud šlo o step-up, odvodíme efektivní ClientType z acr claimu.
+      // SkodaIDP používá named LoA hodnoty mapované přes acr.loa.map:
+      //   weak/1 → 1FA, medium/2 → 2FA, strong/3 → 3FA.
       // Klient zůstává 1FA — měníme jen UI label a LoA chip.
       let effectiveType: ClientType = clientType;
       if (localStorage.getItem('oidc_stepup_pending') === '1' && tokens.id_token) {
         try {
           const payload = JSON.parse(atob(tokens.id_token.split('.')[1]));
-          if (payload.acr === '3' || payload.acr === 3) effectiveType = '3FA';
-          else if (payload.acr === '2' || payload.acr === 2) effectiveType = '2FA';
+          const acr = String(payload.acr ?? '').toLowerCase();
+          if (acr === '3' || acr === 'strong') effectiveType = '3FA';
+          else if (acr === '2' || acr === 'medium') effectiveType = '2FA';
         } catch { /* ponecháme původní */ }
         localStorage.removeItem('oidc_stepup_pending');
       }
@@ -315,10 +318,12 @@ const App: React.FC = () => {
     }
   }, [envConfig, generateCodeVerifier, generateCodeChallenge]);
 
-  // Step-up z 1FA na 2FA: re-login proti TÉMUŽ 1FA klientovi s acr_values=2.
-  // Keycloak vynutí přidání druhého faktoru (Conditional flow s podmínkou na LoA).
+  // Step-up z 1FA na 2FA: re-login proti TÉMUŽ 1FA klientovi s acr_values="medium strong".
+  // SkodaIDP mapuje weak/medium/strong na LoA 1/2/3 přes acr.loa.map; "medium strong"
+  // znamená "akceptuju 2FA i 3FA", což je standardní step-up zápis používaný napříč
+  // Skoda aplikacemi. Keycloak vynutí přidání druhého faktoru (Conditional flow).
   const stepUpToTwoFactor = useCallback((): void => {
-    loginWithOidc('1FA', '2');
+    loginWithOidc('1FA', 'medium strong');
   }, [loginWithOidc]);
 
   // ── SAML flow ─────────────────────────────────────────────────────────────
