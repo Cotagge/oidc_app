@@ -146,6 +146,12 @@ const App: React.FC = () => {
   // Po výběru env z rozcestníku auto-spustíme login pro tuto kombinaci.
   const [pendingDirectLogin, setPendingDirectLogin] = useState<{ protocol: 'oidc' | 'saml'; clientType: ClientType } | null>(null);
 
+  // Monitoring (Elastic Synthetics) si dělá vlastní PKCE flow a redirect_uri směřuje
+  // sem; my code → token nemůžeme dokončit (verifier máme v jeho paměti, ne v naší).
+  // Pro monitoring stačí, že callback URL obsahuje ?code=… — test už passnul.
+  // Zobrazíme success page, aby screenshot v reportu nevypadal jako chyba.
+  const [monitorSuccess, setMonitorSuccess] = useState<{ protocol: 'oidc' | 'saml'; clientType: ClientType } | null>(null);
+
   // Aktivní env config
   const envConfig: EnvConfig | null = useMemo(() => {
     if (!config || !selectedEnv) return null;
@@ -637,6 +643,16 @@ const App: React.FC = () => {
     if (code) {
       const usedCode = localStorage.getItem('used_auth_code');
       if (usedCode === code) { setLoading(false); return; }
+      // Externí klient (monitoring) si dělá PKCE flow sám — verifier nemáme
+      // a token endpoint by selhal s "Invalid code verifier". Zobrazíme jen
+      // success page, ať screenshot v reportu nevypadá jako chyba.
+      if (!localStorage.getItem('code_verifier')) {
+        localStorage.setItem('used_auth_code', code);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setMonitorSuccess(route);
+        setLoading(false);
+        return;
+      }
       localStorage.setItem('used_auth_code', code);
       const storedEnv = localStorage.getItem(STORAGE_ENV_KEY);
       const knownEnv = storedEnv && cfg.environments[storedEnv]
@@ -745,6 +761,7 @@ const App: React.FC = () => {
     resetClientState();
     setSelectedEnv(null);
     setPendingDirectLogin(null);
+    setMonitorSuccess(null);
     if (window.location.pathname !== '/') {
       window.history.replaceState({}, document.title, '/');
     }
@@ -871,10 +888,59 @@ const App: React.FC = () => {
   // ── Render obsah podle stavu ──────────────────────────────────────────────
 
   const renderContent = () => {
+    if (monitorSuccess) return renderMonitorSuccess();
     if (isAuthenticated && userInfo) return renderAuthenticated();
     if (stage === 'env') return renderEnvSelector();
     if (stage === 'protocol') return renderProtocolSelector();
     return renderClientTypeSelector();
+  };
+
+  // Success obrazovka pro externí monitoring (volá `/auth` se svým PKCE a redirect
+  // na nás čeká jen na ?code=… v URL). Bez stavu, bez tlačítek — jen jasný signál
+  // "callback OK" pro screenshot v reportu.
+  const renderMonitorSuccess = () => {
+    if (!monitorSuccess) return null;
+    return (
+      <Container maxWidth="sm" sx={{ py: { xs: 6, md: 10 } }}>
+        <Card variant="outlined" sx={{ borderColor: COLORS.border, borderRadius: 2, textAlign: 'center', p: 4 }}>
+          <Box
+            sx={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              bgcolor: COLORS.greenStatus,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+              fontSize: 28,
+              fontWeight: 700,
+              mb: 2,
+            }}
+          >
+            ✓
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, color: COLORS.textPrimary, mb: 1 }}>
+            Login callback OK
+          </Typography>
+          <Typography variant="body2" sx={{ color: COLORS.textSecondary, mb: 2 }}>
+            Authorization code byl úspěšně doručen na redirect URI.
+          </Typography>
+          <Stack direction="row" spacing={1} justifyContent="center">
+            <Chip
+              label={monitorSuccess.protocol.toUpperCase()}
+              size="small"
+              sx={{ bgcolor: COLORS.greenStatusBg, color: COLORS.greenStatusText, fontWeight: 700 }}
+            />
+            <Chip
+              label={monitorSuccess.clientType}
+              size="small"
+              sx={{ bgcolor: COLORS.greenStatusBg, color: COLORS.greenStatusText, fontWeight: 700 }}
+            />
+          </Stack>
+        </Card>
+      </Container>
+    );
   };
 
   // Univerzální chip-back tlačítko ve stylu kcmonitor.
