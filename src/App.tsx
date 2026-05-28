@@ -20,6 +20,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LogoutIcon from '@mui/icons-material/Logout';
 import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import BadgeIcon from '@mui/icons-material/Badge';
+import UpgradeIcon from '@mui/icons-material/Upgrade';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import './App.css';
 
 // ── Typy ──────────────────────────────────────────────────────────────────────
@@ -92,6 +94,33 @@ const oidcClientIdFor = (env: EnvConfig, t: ClientType): string =>
 const samlClientIdFor = (env: EnvConfig, t: ClientType): string =>
   t === '3FA' ? env.samlClient3F : t === '2FA' ? env.samlClient2F : env.samlClient1F;
 
+// ── Path-based routing ───────────────────────────────────────────────────────
+// Každý klient má vlastní cestu, aby šel z venku (monitoring, bookmarky)
+// adresovat přímo a Keycloak měl jednoznačnou redirect URI:
+//   /oidc/1fa, /oidc/2fa, /oidc/3fa, /saml/1fa, /saml/2fa, /saml/3fa
+
+const clientPath = (protocol: 'oidc' | 'saml', t: ClientType): string =>
+  `/${protocol}/${t.toLowerCase()}`;
+
+const parseClientPath = (pathname: string): { protocol: 'oidc' | 'saml'; clientType: ClientType } | null => {
+  const m = pathname.match(/^\/(oidc|saml)\/(1fa|2fa|3fa)\/?$/i);
+  if (!m) return null;
+  const protocol = m[1].toLowerCase() as 'oidc' | 'saml';
+  const clientType = m[2].toUpperCase() as ClientType;
+  return { protocol, clientType };
+};
+
+// Najde env v configu podle OIDC issueru (`iss` claim = `${url}/realms/${realm}`).
+// Stejný princip pro SAML <saml:Issuer>, který obsahuje stejný URL.
+const findEnvByIssuer = (cfg: AppConfig, issuer: string): { key: string; env: EnvConfig } | null => {
+  const normalized = issuer.replace(/\/$/, '');
+  for (const [key, env] of Object.entries(cfg.environments)) {
+    const expected = `${env.url.replace(/\/$/, '')}/realms/${env.realm}`;
+    if (normalized === expected) return { key, env };
+  }
+  return null;
+};
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
@@ -100,7 +129,11 @@ const App: React.FC = () => {
 
   const [selectedEnv, setSelectedEnv] = useState<string | null>(null);
   const [protocol, setProtocol] = useState<Protocol>(null);
+  // usedClientType — zobrazená úroveň autentizace (po step-upu se přepíše dle acr claimu).
   const [usedClientType, setUsedClientType] = useState<ClientType | null>(null);
+  // loginClientType — klient, kterému token reálně patří (azp). Pro logout / token endpoint.
+  // Po step-upu zůstává stejný (klient se nemění), zatímco usedClientType odráží nové LoA.
+  const [loginClientType, setLoginClientType] = useState<ClientType | null>(null);
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -108,6 +141,10 @@ const App: React.FC = () => {
   const [samlRawXml, setSamlRawXml] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Pokud uživatel přišel rovnou na /oidc/2fa (bez code), zachytíme záměr.
+  // Po výběru env z rozcestníku auto-spustíme login pro tuto kombinaci.
+  const [pendingDirectLogin, setPendingDirectLogin] = useState<{ protocol: 'oidc' | 'saml'; clientType: ClientType } | null>(null);
 
   // Aktivní env config
   const envConfig: EnvConfig | null = useMemo(() => {
@@ -180,6 +217,8 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       setUserInfo(info);
       localStorage.setItem('user_info', JSON.stringify(info));
+      // Necháme cestu (např. /oidc/1fa) — uživatel z URL vidí, který klient
+      // je přihlášený. Smažeme jen query (?code=...).
       window.history.replaceState({}, document.title, window.location.pathname);
       localStorage.removeItem('used_auth_code');
       setLoading(false);
@@ -207,6 +246,8 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       setUserInfo(info);
       localStorage.setItem('user_info', JSON.stringify(info));
+      // Necháme cestu (např. /oidc/1fa) — uživatel z URL vidí, který klient
+      // je přihlášený. Smažeme jen query (?code=...).
       window.history.replaceState({}, document.title, window.location.pathname);
       localStorage.removeItem('used_auth_code');
       setLoading(false);
@@ -217,52 +258,111 @@ const App: React.FC = () => {
     }
   }, [fetchUserInfo]);
 
-  const exchangeCodeForToken = useCallback(async (env: EnvConfig, code: string, clientType: ClientType): Promise<void> => {
+  // Pokud je env známé (ruční login), předá se přímo. Pokud ne (monitoring přijde
+  // rovnou na /oidc/1fa?code=...), pokusíme se ho odvodit z `iss` v ID tokenu;
+  // než ho dostaneme, musíme token endpoint volat na URL z config.json — bez
+  // env nemůžeme. Proto když env chybí, projdeme všechna env z configu a najdeme
+  // to, na které code patří (token endpoint vrátí 200 jen pro správné).
+  const exchangeCodeForToken = useCallback(async (
+    cfg: AppConfig,
+    knownEnv: { key: string; env: EnvConfig } | null,
+    code: string,
+    clientType: ClientType,
+  ): Promise<void> => {
     try {
-      const tokenUrl = `${env.url}/realms/${env.realm}/protocol/openid-connect/token`;
-      const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
-      const clientId = oidcClientIdFor(env, clientType);
       const codeVerifier = localStorage.getItem('code_verifier');
       if (!codeVerifier) throw new Error('Code verifier not found in localStorage');
+      const redirectUri = `${window.location.origin}${clientPath('oidc', clientType)}`;
 
-      const tokenResponse = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: clientId,
-          code,
-          redirect_uri: redirectUri,
-          code_verifier: codeVerifier,
-        }),
-      });
+      // Seznam env k vyzkoušení: známé env první, jinak všechny.
+      const candidates: Array<{ key: string; env: EnvConfig }> = knownEnv
+        ? [knownEnv]
+        : Object.entries(cfg.environments).map(([key, env]) => ({ key, env }));
 
-      if (!tokenResponse.ok) {
-        let errorData = {};
-        try { errorData = await tokenResponse.json(); } catch { /* ignore */ }
-        throw new Error(`Token request failed: ${tokenResponse.status} ${JSON.stringify(errorData)}`);
+      let tokens: any = null;
+      let resolved: { key: string; env: EnvConfig } | null = null;
+      let lastError = '';
+
+      for (const cand of candidates) {
+        const tokenUrl = `${cand.env.url}/realms/${cand.env.realm}/protocol/openid-connect/token`;
+        const clientId = oidcClientIdFor(cand.env, clientType);
+        const resp = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: clientId,
+            code,
+            redirect_uri: redirectUri,
+            code_verifier: codeVerifier,
+          }),
+        });
+        if (resp.ok) {
+          tokens = await resp.json();
+          resolved = cand;
+          break;
+        }
+        try { lastError = JSON.stringify(await resp.json()); } catch { lastError = `${resp.status}`; }
       }
 
-      const tokens = await tokenResponse.json();
+      if (!tokens || !resolved) {
+        throw new Error(`Token request failed across all environments: ${lastError}`);
+      }
+
+      // Pokud máme ID token, ověříme env z `iss` — autoritativní zdroj.
+      if (tokens.id_token) {
+        try {
+          const payload = JSON.parse(atob(tokens.id_token.split('.')[1]));
+          if (payload.iss) {
+            const fromIss = findEnvByIssuer(cfg, payload.iss);
+            if (fromIss) resolved = fromIss;
+          }
+        } catch { /* ponecháme resolved z fetch loopu */ }
+      }
+
       localStorage.setItem('access_token', tokens.access_token);
       if (tokens.id_token) localStorage.setItem('id_token', tokens.id_token);
       if (tokens.refresh_token) localStorage.setItem('refresh_token', tokens.refresh_token);
-      localStorage.setItem('used_client_type', clientType);
+
+      // Pokud šlo o step-up, odvodíme efektivní ClientType z acr claimu.
+      // SkodaIDP používá named LoA hodnoty mapované přes acr.loa.map:
+      //   weak/1 → 1FA, medium/2 → 2FA, strong/3 → 3FA.
+      // Klient zůstává 1FA — měníme jen UI label a LoA chip.
+      let effectiveType: ClientType = clientType;
+      if (localStorage.getItem('oidc_stepup_pending') === '1' && tokens.id_token) {
+        try {
+          const payload = JSON.parse(atob(tokens.id_token.split('.')[1]));
+          const acr = String(payload.acr ?? '').toLowerCase();
+          if (acr === '3' || acr === 'strong') effectiveType = '3FA';
+          else if (acr === '2' || acr === 'medium') effectiveType = '2FA';
+        } catch { /* ponecháme původní */ }
+        localStorage.removeItem('oidc_stepup_pending');
+      }
+
+      localStorage.setItem('used_client_type', effectiveType);
+      localStorage.setItem('login_client_type', clientType);
       localStorage.setItem('used_protocol', 'oidc');
+      localStorage.setItem(STORAGE_ENV_KEY, resolved.key);
       localStorage.removeItem('code_verifier');
       localStorage.removeItem('code_challenge');
-      setUsedClientType(clientType);
+      setSelectedEnv(resolved.key);
+      setUsedClientType(effectiveType);
+      setLoginClientType(clientType);
       setProtocol('oidc');
 
-      if (tokens.id_token) parseUserInfoFromIdToken(env, tokens.id_token);
-      else await fetchUserInfo(env, tokens.access_token);
+      if (tokens.id_token) parseUserInfoFromIdToken(resolved.env, tokens.id_token);
+      else await fetchUserInfo(resolved.env, tokens.access_token);
     } catch (error) {
       setErrorMsg(`Chyba při dokončování přihlášení: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
       setLoading(false);
     }
   }, [parseUserInfoFromIdToken, fetchUserInfo]);
 
-  const loginWithOidc = useCallback(async (clientType: ClientType): Promise<void> => {
+  // Pokud je předáno `acrValues`, jde o step-up:
+  //  - přidáme acr_values do auth requestu
+  //  - vynecháme prompt=login a max_age=0, aby Keycloak využil existující SSO session
+  //    a vyžádal jen chybějící faktor (Conditional flow s podmínkou na LoA).
+  const loginWithOidc = useCallback(async (clientType: ClientType, acrValues?: string): Promise<void> => {
     if (!envConfig) return;
     try {
       const codeVerifier = generateCodeVerifier();
@@ -271,18 +371,24 @@ const App: React.FC = () => {
       localStorage.setItem('code_challenge', codeChallenge);
 
       const clientId = oidcClientIdFor(envConfig, clientType);
-      const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
+      const redirectUri = `${window.location.origin}${clientPath('oidc', clientType)}`;
 
-      const authUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/auth` +
+      const isStepUp = !!acrValues;
+      let authUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/auth` +
         `?client_id=${encodeURIComponent(clientId)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=code` +
         `&scope=openid profile email microprofile-jwt amr` +
         `&code_challenge=${codeChallenge}` +
         `&code_challenge_method=S256` +
-        `&state=${Date.now()}` +
-        `&prompt=login` +
-        `&max_age=0`;
+        `&state=${Date.now()}`;
+
+      if (isStepUp) {
+        authUrl += `&acr_values=${encodeURIComponent(acrValues!)}`;
+        localStorage.setItem('oidc_stepup_pending', '1');
+      } else {
+        authUrl += `&prompt=login&max_age=0`;
+      }
 
       window.location.href = authUrl;
     } catch (error) {
@@ -290,13 +396,21 @@ const App: React.FC = () => {
     }
   }, [envConfig, generateCodeVerifier, generateCodeChallenge]);
 
+  // Step-up z 1FA na 2FA: re-login proti TÉMUŽ 1FA klientovi s acr_values="medium strong".
+  // SkodaIDP mapuje weak/medium/strong na LoA 1/2/3 přes acr.loa.map; "medium strong"
+  // znamená "akceptuju 2FA i 3FA", což je standardní step-up zápis používaný napříč
+  // Skoda aplikacemi. Keycloak vynutí přidání druhého faktoru (Conditional flow).
+  const stepUpToTwoFactor = useCallback((): void => {
+    loginWithOidc('1FA', 'medium strong');
+  }, [loginWithOidc]);
+
   // ── SAML flow ─────────────────────────────────────────────────────────────
 
   const loginWithSaml = useCallback(async (clientType: ClientType): Promise<void> => {
     if (!envConfig) return;
     try {
       const samlClientId = samlClientIdFor(envConfig, clientType);
-      const acsUrl = `${window.location.origin}?client_type=${clientType}&amp;protocol=saml`;
+      const acsUrl = `${window.location.origin}${clientPath('saml', clientType)}`;
       const requestId = '_' + Math.random().toString(36).substring(2, 18);
       const issueInstant = new Date().toISOString();
       const authnRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}" AssertionConsumerServiceURL="${acsUrl}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"><saml:Issuer>${samlClientId}</saml:Issuer></samlp:AuthnRequest>`;
@@ -306,12 +420,8 @@ const App: React.FC = () => {
       for (let i = 0; i < deflated.length; i++) deflatedStr += String.fromCharCode(deflated[i]);
       const samlRequest = encodeURIComponent(btoa(deflatedStr));
 
-      const relayState = encodeURIComponent(`client_type=${clientType}`);
       const samlEndpoint = `${envConfig.url}/realms/${envConfig.realm}/protocol/saml`;
-      const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}&RelayState=${relayState}`;
-
-      localStorage.setItem('saml_client_type', clientType);
-      localStorage.setItem('saml_request_id', requestId);
+      const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}`;
 
       window.location.href = redirectUrl;
     } catch (error) {
@@ -319,11 +429,10 @@ const App: React.FC = () => {
     }
   }, [envConfig]);
 
-  const parseSamlCallback = useCallback((): void => {
+  const parseSamlCallback = useCallback((cfg: AppConfig, clientType: ClientType): void => {
     const urlParams = new URLSearchParams(window.location.search);
     const samlResponse = urlParams.get('SAMLResponse');
     const samlError = urlParams.get('SAMLError');
-    const clientType = (urlParams.get('client_type') || localStorage.getItem('saml_client_type') || '1FA') as ClientType;
 
     if (samlError) {
       setErrorMsg(`Chyba při SAML přihlášení: ${samlError}`);
@@ -348,6 +457,14 @@ const App: React.FC = () => {
       if (parseError) throw new Error('Chyba při parsování SAML XML');
 
       const nameId = xmlDoc.querySelector('NameID')?.textContent || 'N/A';
+
+      // Env z <saml:Issuer> v Response (= URL realmu, který Assertion vystavil).
+      const issuer = xmlDoc.querySelector('Issuer')?.textContent?.trim() || '';
+      const resolvedEnv = issuer ? findEnvByIssuer(cfg, issuer) : null;
+      if (resolvedEnv) {
+        localStorage.setItem(STORAGE_ENV_KEY, resolvedEnv.key);
+        setSelectedEnv(resolvedEnv.key);
+      }
 
       const attrs: SamlAttributes = {};
       xmlDoc.querySelectorAll('Attribute').forEach((attr) => {
@@ -407,9 +524,8 @@ const App: React.FC = () => {
       localStorage.setItem('used_client_type', clientType);
       localStorage.setItem('used_protocol', 'saml');
       localStorage.setItem('saml_attributes', JSON.stringify(attrs));
-      localStorage.removeItem('saml_client_type');
-      localStorage.removeItem('saml_request_id');
-
+      // Necháme cestu (např. /saml/1fa) — uživatel z URL vidí, který klient
+      // je přihlášený. Smažeme jen query (?SAMLResponse=...).
       window.history.replaceState({}, document.title, window.location.pathname);
       setLoading(false);
     } catch (error) {
@@ -425,6 +541,7 @@ const App: React.FC = () => {
     setIsAuthenticated(false);
     setUserInfo(null);
     setUsedClientType(null);
+    setLoginClientType(null);
     setSamlAttributes(null);
     setSamlRawXml(null);
     setProtocol(null);
@@ -447,10 +564,13 @@ const App: React.FC = () => {
   const logoutSSO = useCallback((): void => {
     if (!envConfig) { logoutLocal(); return; }
     const usedProto = localStorage.getItem('used_protocol') as Protocol;
+    // Logout musí použít klienta, kterému token patří (azp), ne aktuálně zobrazené LoA.
+    // Po step-upu zůstává klient stejný jako při původním loginu, jen acr v tokenu vzroste.
+    const tokenClientType = loginClientType ?? usedClientType ?? '1FA';
 
     if (usedProto === 'oidc') {
       const idToken = localStorage.getItem('id_token');
-      const clientId = oidcClientIdFor(envConfig, usedClientType ?? '1FA');
+      const clientId = oidcClientIdFor(envConfig, tokenClientType);
       const params = new URLSearchParams({
         client_id: clientId,
         post_logout_redirect_uri: window.location.origin,
@@ -464,7 +584,7 @@ const App: React.FC = () => {
     }
 
     if (usedProto === 'saml') {
-      const samlClientId = samlClientIdFor(envConfig, usedClientType ?? '1FA');
+      const samlClientId = samlClientIdFor(envConfig, tokenClientType);
       const nameId = userInfo?.sub || '';
       const requestId = '_' + Math.random().toString(36).substring(2, 18);
       const issueInstant = new Date().toISOString();
@@ -482,7 +602,7 @@ const App: React.FC = () => {
     }
 
     logoutLocal();
-  }, [envConfig, usedClientType, userInfo, clearAuthStorage, resetClientState, logoutLocal]);
+  }, [envConfig, usedClientType, loginClientType, userInfo, clearAuthStorage, resetClientState, logoutLocal]);
 
   // ── Inicializace / callback handling ──────────────────────────────────────
 
@@ -491,20 +611,23 @@ const App: React.FC = () => {
     setLoading(false);
   }, [clearAuthStorage]);
 
-  const parseKeycloakCallback = useCallback((): void => {
-    if (!envConfig) { setLoading(false); return; }
-    const urlParams = new URLSearchParams(window.location.search);
-    const proto = urlParams.get('protocol');
+  // Callback handling řídí path: protokol + clientType bere z pathname (např. /oidc/1fa).
+  // Env je odvozeno z `iss` (OIDC) nebo <Issuer> (SAML) až po dekódování tokenu,
+  // takže envConfig není potřeba dopředu — viz exchangeCodeForToken.
+  const parseKeycloakCallback = useCallback((cfg: AppConfig): void => {
+    const route = parseClientPath(window.location.pathname);
+    if (!route) { setLoading(false); return; }
 
-    if (proto === 'saml' || urlParams.has('SAMLResponse') || urlParams.has('SAMLError')) {
-      parseSamlCallback();
+    const urlParams = new URLSearchParams(window.location.search);
+
+    if (route.protocol === 'saml') {
+      parseSamlCallback(cfg, route.clientType);
       return;
     }
 
     const code = urlParams.get('code');
     const error = urlParams.get('error');
     const errorDescription = urlParams.get('error_description');
-    const clientType = (urlParams.get('client_type') as ClientType) || '1FA';
 
     if (error) {
       setErrorMsg(`Chyba při přihlášení: ${error}\n${errorDescription || ''}`);
@@ -515,28 +638,88 @@ const App: React.FC = () => {
       const usedCode = localStorage.getItem('used_auth_code');
       if (usedCode === code) { setLoading(false); return; }
       localStorage.setItem('used_auth_code', code);
-      exchangeCodeForToken(envConfig, code, clientType);
+      const storedEnv = localStorage.getItem(STORAGE_ENV_KEY);
+      const knownEnv = storedEnv && cfg.environments[storedEnv]
+        ? { key: storedEnv, env: cfg.environments[storedEnv] }
+        : null;
+      exchangeCodeForToken(cfg, knownEnv, code, route.clientType);
       return;
     }
     setLoading(false);
-  }, [envConfig, exchangeCodeForToken, parseSamlCallback]);
+  }, [exchangeCodeForToken, parseSamlCallback]);
 
-  // Spustíme až po načtení config — pokud je v URL callback, potřebujeme env config
+  // Po načtení configu rozhodneme:
+  //  - callback (URL obsahuje code / SAMLResponse / error) → parseKeycloakCallback
+  //  - cesta /oidc|saml/1fa|2fa|3fa bez callback paramů → pending direct login
+  //    (po vybrání env se auto-spustí login)
+  //  - jinak rozcestník
   useEffect(() => {
     if (!config) return;
     const urlParams = new URLSearchParams(window.location.search);
     const hasCallback = urlParams.has('code') || urlParams.has('error') ||
-      urlParams.has('SAMLResponse') || urlParams.has('SAMLError') ||
-      (urlParams.has('protocol') && urlParams.get('protocol') === 'saml');
+      urlParams.has('SAMLResponse') || urlParams.has('SAMLError');
 
-    if (hasCallback && envConfig) parseKeycloakCallback();
-    else checkAuthStatus();
-  }, [config, envConfig, parseKeycloakCallback, checkAuthStatus]);
+    if (hasCallback) {
+      parseKeycloakCallback(config);
+      return;
+    }
+
+    const route = parseClientPath(window.location.pathname);
+    if (route) {
+      // F5 v dashboardu: pokud máme uloženou session, kterou cesta odpovídá,
+      // obnovíme přihlášený stav místo zahájení nového loginu.
+      const storedUser = localStorage.getItem('user_info');
+      const storedProto = localStorage.getItem('used_protocol');
+      const storedLoginClient = localStorage.getItem('login_client_type');
+      const storedUsedClient = localStorage.getItem('used_client_type');
+      const storedEnv = localStorage.getItem(STORAGE_ENV_KEY);
+      if (storedUser && storedProto === route.protocol && storedLoginClient === route.clientType && storedEnv && config.environments[storedEnv]) {
+        try {
+          const info: UserInfo = JSON.parse(storedUser);
+          setUserInfo(info);
+          setIsAuthenticated(true);
+          setSelectedEnv(storedEnv);
+          setProtocol(route.protocol);
+          setLoginClientType(route.clientType);
+          setUsedClientType((storedUsedClient as ClientType) || route.clientType);
+          if (route.protocol === 'saml') {
+            const samlAttrsRaw = localStorage.getItem('saml_attributes');
+            if (samlAttrsRaw) setSamlAttributes(JSON.parse(samlAttrsRaw));
+          }
+          setLoading(false);
+          return;
+        } catch { /* fallthrough na pending login */ }
+      }
+      // Storage čistíme proto, aby pending login startoval s čistým stavem
+      // (ne na zbytcích z minulé session) — env z localStorage zachováme.
+      clearAuthStorage();
+      resetClientState();
+      setPendingDirectLogin(route);
+      setLoading(false);
+      return;
+    }
+
+    checkAuthStatus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config]);
 
   // Persistence zvoleného env
   useEffect(() => {
     if (selectedEnv) localStorage.setItem(STORAGE_ENV_KEY, selectedEnv);
   }, [selectedEnv]);
+
+  // Auto-trigger loginu pro pending direct entry. Spustí se jakmile máme envConfig.
+  useEffect(() => {
+    if (!pendingDirectLogin || !envConfig) return;
+    const { protocol: p, clientType } = pendingDirectLogin;
+    setPendingDirectLogin(null);
+    if (p === 'oidc') loginWithOidc(clientType);
+    else loginWithSaml(clientType);
+  }, [pendingDirectLogin, envConfig, loginWithOidc, loginWithSaml]);
+
+  // Pokud uživatel přijde na callback URL (např. /oidc/1fa) a klikne na logo
+  // ("SIP Demo App"), chceme se vrátit na rozcestník. handleResetEnv smaže env,
+  // ale URL stále obsahuje /oidc/1fa — manuálně vyčistíme pathname.
 
   // ── UI helpery ────────────────────────────────────────────────────────────
 
@@ -561,6 +744,10 @@ const App: React.FC = () => {
     clearAuthStorage();
     resetClientState();
     setSelectedEnv(null);
+    setPendingDirectLogin(null);
+    if (window.location.pathname !== '/') {
+      window.history.replaceState({}, document.title, '/');
+    }
   };
 
   const handleBack = () => {
@@ -913,6 +1100,9 @@ const App: React.FC = () => {
       ? samlClientIdFor(envConfig, usedClientType ?? '1FA')
       : oidcClientIdFor(envConfig, usedClientType ?? '1FA');
 
+    // 2FA a 3FA odemykají citlivá pole; SAML bere jako "elevated", protože ten neřešíme step-upem.
+    const isElevated = usedClientType === '2FA' || usedClientType === '3FA' || protocol === 'saml';
+
     return (
       <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 3 }}>
@@ -970,37 +1160,89 @@ const App: React.FC = () => {
           </Box>
         )}
 
+        {/* 1FA: upozornění, že část profilu je zamčená za step-upem */}
+        {isElevated === false && protocol === 'oidc' && (
+          <Card
+            variant="outlined"
+            sx={{
+              mb: 3,
+              borderColor: COLORS.amber,
+              borderRadius: 2,
+              bgcolor: '#fff8eb',
+            }}
+          >
+            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, py: '16px !important' }}>
+              <LockOutlinedIcon sx={{ color: COLORS.amber, fontSize: 28 }} />
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
+                  Některé údaje jsou skryté
+                </Typography>
+                <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                  Pro zobrazení plného profilu proveďte step-up na 2FA.
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Informace o uživateli */}
         <Card variant="outlined" sx={{ mb: 3, borderColor: COLORS.border, borderRadius: 2 }}>
           <CardContent sx={{ p: 0 }}>
-            <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${COLORS.border}` }}>
+            <Box
+              sx={{
+                px: 3,
+                py: 2,
+                borderBottom: `1px solid ${COLORS.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 1,
+              }}
+            >
               <Typography variant="subtitle1" sx={{ fontWeight: 700, color: COLORS.textPrimary }}>
                 Informace o uživateli
               </Typography>
+              <Chip
+                label={isElevated ? 'Plný profil' : 'Veřejné údaje'}
+                size="small"
+                sx={{
+                  bgcolor: isElevated ? COLORS.greenStatusBg : '#fff3d6',
+                  color: isElevated ? COLORS.greenStatusText : '#8a5a00',
+                  fontWeight: 700,
+                  fontSize: '0.7rem',
+                  letterSpacing: 0.4,
+                }}
+              />
             </Box>
             <Stack divider={<Divider />}>
               <InfoRow label="Celé jméno" value={userInfo.name} />
-              <InfoRow label="Email" value={userInfo.email} />
               <InfoRow label="Uživatelské jméno" value={userInfo.preferred_username || 'N/A'} />
               {protocol === 'oidc' && (
-                <>
-                  <InfoRow label="ACR Level" value={<code>{userInfo.acr}</code>} />
-                  <InfoRow
-                    label="AMR (metody)"
-                    value={
-                      <>
-                        <code>{formatAMR(userInfo.amr || [])}</code>
-                        {userInfo.amr && userInfo.amr.length > 0 && (
-                          <Typography variant="caption" sx={{ ml: 1, color: COLORS.textMuted }}>
-                            [{userInfo.amr.join(', ')}]
-                          </Typography>
-                        )}
-                      </>
-                    }
-                  />
-                </>
+                <InfoRow label="ACR Level" value={<code>{userInfo.acr}</code>} />
               )}
               <InfoRow label="Použitý klient" value={<code>{usedClient}</code>} />
+              {/* Citlivé údaje odemčené step-upem na 2FA+ */}
+              {isElevated && (
+                <>
+                  <InfoRow label="Email" value={userInfo.email} />
+                  <InfoRow label="Sub / NameID" value={<code>{userInfo.sub}</code>} />
+                  {protocol === 'oidc' && (
+                    <InfoRow
+                      label="AMR (metody)"
+                      value={
+                        <>
+                          <code>{formatAMR(userInfo.amr || [])}</code>
+                          {userInfo.amr && userInfo.amr.length > 0 && (
+                            <Typography variant="caption" sx={{ ml: 1, color: COLORS.textMuted }}>
+                              [{userInfo.amr.join(', ')}]
+                            </Typography>
+                          )}
+                        </>
+                      }
+                    />
+                  )}
+                </>
+              )}
             </Stack>
           </CardContent>
         </Card>
@@ -1054,8 +1296,28 @@ const App: React.FC = () => {
           </Card>
         )}
 
-        {/* Logout buttony */}
+        {/* Akce: step-up + logout */}
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+          {protocol === 'oidc' && usedClientType === '1FA' && (
+            <Button
+              onClick={stepUpToTwoFactor}
+              variant="contained"
+              startIcon={<UpgradeIcon />}
+              sx={{
+                borderRadius: '24px',
+                fontWeight: 700,
+                textTransform: 'none',
+                px: 3,
+                py: 1,
+                bgcolor: COLORS.amber,
+                color: COLORS.textPrimary,
+                boxShadow: 'none',
+                '&:hover': { bgcolor: COLORS.amberHover, boxShadow: 'none' },
+              }}
+            >
+              Step-up na 2FA
+            </Button>
+          )}
           <Button
             onClick={logoutSSO}
             variant="contained"

@@ -30,6 +30,30 @@ Zvolené prostředí se persistuje v `localStorage` pod klíčem `sip_demo_env`.
 ## Architektura (src/App.tsx)
 Jediný soubor — monolitická React komponenta `App.tsx` + minimální `App.css` (jen `body` reset a `code` styl).
 
+### Path-based routing pro klienty
+Každý OIDC/SAML klient má vlastní cestu, aby ho bylo možné jednoznačně adresovat (monitoring, bookmarky) a Keycloak měl explicitní redirect URI:
+
+| Cesta | Klient |
+|---|---|
+| `/oidc/1fa`, `/oidc/2fa`, `/oidc/3fa` | OIDC weak/medium/strong |
+| `/saml/1fa`, `/saml/2fa`, `/saml/3fa` | SAML weak/medium/strong |
+| `/` | rozcestník (env → protokol → klient) |
+
+Helpery v `App.tsx`: `clientPath(protocol, clientType)` skládá URL, `parseClientPath(pathname)` parsuje. Routing běží přes `window.location.pathname` + `window.history.replaceState` — žádná knihovna (`react-router-dom` apod.) není potřeba.
+
+### Detekce prostředí z tokenu (`iss` / `<saml:Issuer>`)
+Když monitoring nebo externí odkaz vstoupí přímo na `/oidc/2fa?code=...`, appka neví, který Keycloak (DEV/TEST/PROD) token vystavil. **Env se detekuje z `iss` claimu v ID tokenu** (resp. `<saml:Issuer>` v SAML Response), což je standardní OIDC claim s URL realmu. `findEnvByIssuer(cfg, issuer)` projde `config.json` a najde odpovídající env.
+
+V `exchangeCodeForToken`, pokud env není známý z `localStorage`, projde všechna env z configu a volá token endpoint dokud nedostane 200 — z odpovědi pak ověří env přes `iss`. Klient v každém env může mít stejné `client_id`, ale token endpoint patří jen jednomu realmu, takže se najde správně.
+
+### Netlify SPA fallback
+`public/_redirects`:
+- `/live /live.txt 200` — health check endpoint (vrací `OK` jako text). Pořadí je důležité — musí být před SPA fallbackem, jinak by ho `/*` přebilo.
+- `/* /index.html 200` — bez toho by Netlify pro `/oidc/1fa` vracelo 404 (statický host nezná naše cesty). S touto pravidlou všechny cesty serverují `index.html` a routing řeší appka v JS.
+
+### Direct entry flow
+Pokud uživatel zadá `/oidc/2fa` ručně (bez `?code`), uloží se "pending direct login" záměr. Když je env vybrané (z `localStorage`), auto-spustí se login. Pokud env chybí, zobrazí se rozcestník — po vybrání env login pokračuje.
+
 ### Klíčové stavy
 - `config` — načtený `AppConfig` z `config.json`
 - `selectedEnv` — klíč prostředí (`'DEV'`/`'TEST'`/`'PROD'`)
@@ -60,8 +84,8 @@ Aplikace nabízí dvě varianty (obě jsou tlačítka v dashboardu po loginu):
    - Před redirectem vyčistí storage a stav.
 
 **Vyžaduje konfiguraci Keycloaku:**
-- OIDC klienti: *Valid post logout redirect URIs* = origin appky.
-- SAML klienti: *Logout Service Redirect Binding URL* = origin appky; ověřit kompatibilitu NameID formátu.
+- OIDC klienti: *Valid redirect URIs* = `https://<origin>/oidc/<1fa|2fa|3fa>` podle úrovně klienta. *Valid post logout redirect URIs* = origin appky (`/`).
+- SAML klienti: *Valid redirect URIs* / *Master SAML Processing URL* / *Assertion Consumer Service URL* = `https://<origin>/saml/<1fa|2fa|3fa>`. *Logout Service Redirect Binding URL* = origin appky; ověřit kompatibilitu NameID formátu.
 
 ## UI komponenty
 - `SkodaThemeProvider globalBaseline` — wrap celé appky.
