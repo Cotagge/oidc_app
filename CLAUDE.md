@@ -47,7 +47,9 @@ Když monitoring nebo externí odkaz vstoupí přímo na `/oidc/2fa?code=...`, a
 V `exchangeCodeForToken`, pokud env není známý z `localStorage`, projde všechna env z configu a volá token endpoint dokud nedostane 200 — z odpovědi pak ověří env přes `iss`. Klient v každém env může mít stejné `client_id`, ale token endpoint patří jen jednomu realmu, takže se najde správně.
 
 ### Netlify SPA fallback
-`public/_redirects` obsahuje `/* /index.html 200` — bez toho by Netlify pro `/oidc/1fa` vracelo 404 (statický host nezná naše cesty). S touto pravidlou všechny cesty serverují `index.html` a routing řeší appka v JS.
+`public/_redirects`:
+- `/live /live.txt 200` — health check endpoint (vrací `OK` jako text). Pořadí je důležité — musí být před SPA fallbackem, jinak by ho `/*` přebilo.
+- `/* /index.html 200` — bez toho by Netlify pro `/oidc/1fa` vracelo 404 (statický host nezná naše cesty). S touto pravidlou všechny cesty serverují `index.html` a routing řeší appka v JS.
 
 ### Direct entry flow
 Pokud uživatel zadá `/oidc/2fa` ručně (bez `?code`), uloží se "pending direct login" záměr. Když je env vybrané (z `localStorage`), auto-spustí se login. Pokud env chybí, zobrazí se rozcestník — po vybrání env login pokračuje.
