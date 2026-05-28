@@ -94,6 +94,33 @@ const oidcClientIdFor = (env: EnvConfig, t: ClientType): string =>
 const samlClientIdFor = (env: EnvConfig, t: ClientType): string =>
   t === '3FA' ? env.samlClient3F : t === '2FA' ? env.samlClient2F : env.samlClient1F;
 
+// ── Path-based routing ───────────────────────────────────────────────────────
+// Každý klient má vlastní cestu, aby šel z venku (monitoring, bookmarky)
+// adresovat přímo a Keycloak měl jednoznačnou redirect URI:
+//   /oidc/1fa, /oidc/2fa, /oidc/3fa, /saml/1fa, /saml/2fa, /saml/3fa
+
+const clientPath = (protocol: 'oidc' | 'saml', t: ClientType): string =>
+  `/${protocol}/${t.toLowerCase()}`;
+
+const parseClientPath = (pathname: string): { protocol: 'oidc' | 'saml'; clientType: ClientType } | null => {
+  const m = pathname.match(/^\/(oidc|saml)\/(1fa|2fa|3fa)\/?$/i);
+  if (!m) return null;
+  const protocol = m[1].toLowerCase() as 'oidc' | 'saml';
+  const clientType = m[2].toUpperCase() as ClientType;
+  return { protocol, clientType };
+};
+
+// Najde env v configu podle OIDC issueru (`iss` claim = `${url}/realms/${realm}`).
+// Stejný princip pro SAML <saml:Issuer>, který obsahuje stejný URL.
+const findEnvByIssuer = (cfg: AppConfig, issuer: string): { key: string; env: EnvConfig } | null => {
+  const normalized = issuer.replace(/\/$/, '');
+  for (const [key, env] of Object.entries(cfg.environments)) {
+    const expected = `${env.url.replace(/\/$/, '')}/realms/${env.realm}`;
+    if (normalized === expected) return { key, env };
+  }
+  return null;
+};
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
@@ -114,6 +141,10 @@ const App: React.FC = () => {
   const [samlRawXml, setSamlRawXml] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Pokud uživatel přišel rovnou na /oidc/2fa (bez code), zachytíme záměr.
+  // Po výběru env z rozcestníku auto-spustíme login pro tuto kombinaci.
+  const [pendingDirectLogin, setPendingDirectLogin] = useState<{ protocol: 'oidc' | 'saml'; clientType: ClientType } | null>(null);
 
   // Aktivní env config
   const envConfig: EnvConfig | null = useMemo(() => {
@@ -186,7 +217,7 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       setUserInfo(info);
       localStorage.setItem('user_info', JSON.stringify(info));
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, document.title, '/');
       localStorage.removeItem('used_auth_code');
       setLoading(false);
     } catch (error) {
@@ -213,7 +244,7 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       setUserInfo(info);
       localStorage.setItem('user_info', JSON.stringify(info));
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, document.title, '/');
       localStorage.removeItem('used_auth_code');
       setLoading(false);
     } catch {
@@ -223,33 +254,68 @@ const App: React.FC = () => {
     }
   }, [fetchUserInfo]);
 
-  const exchangeCodeForToken = useCallback(async (env: EnvConfig, code: string, clientType: ClientType): Promise<void> => {
+  // Pokud je env známé (ruční login), předá se přímo. Pokud ne (monitoring přijde
+  // rovnou na /oidc/1fa?code=...), pokusíme se ho odvodit z `iss` v ID tokenu;
+  // než ho dostaneme, musíme token endpoint volat na URL z config.json — bez
+  // env nemůžeme. Proto když env chybí, projdeme všechna env z configu a najdeme
+  // to, na které code patří (token endpoint vrátí 200 jen pro správné).
+  const exchangeCodeForToken = useCallback(async (
+    cfg: AppConfig,
+    knownEnv: { key: string; env: EnvConfig } | null,
+    code: string,
+    clientType: ClientType,
+  ): Promise<void> => {
     try {
-      const tokenUrl = `${env.url}/realms/${env.realm}/protocol/openid-connect/token`;
-      const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
-      const clientId = oidcClientIdFor(env, clientType);
       const codeVerifier = localStorage.getItem('code_verifier');
       if (!codeVerifier) throw new Error('Code verifier not found in localStorage');
+      const redirectUri = `${window.location.origin}${clientPath('oidc', clientType)}`;
 
-      const tokenResponse = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          client_id: clientId,
-          code,
-          redirect_uri: redirectUri,
-          code_verifier: codeVerifier,
-        }),
-      });
+      // Seznam env k vyzkoušení: známé env první, jinak všechny.
+      const candidates: Array<{ key: string; env: EnvConfig }> = knownEnv
+        ? [knownEnv]
+        : Object.entries(cfg.environments).map(([key, env]) => ({ key, env }));
 
-      if (!tokenResponse.ok) {
-        let errorData = {};
-        try { errorData = await tokenResponse.json(); } catch { /* ignore */ }
-        throw new Error(`Token request failed: ${tokenResponse.status} ${JSON.stringify(errorData)}`);
+      let tokens: any = null;
+      let resolved: { key: string; env: EnvConfig } | null = null;
+      let lastError = '';
+
+      for (const cand of candidates) {
+        const tokenUrl = `${cand.env.url}/realms/${cand.env.realm}/protocol/openid-connect/token`;
+        const clientId = oidcClientIdFor(cand.env, clientType);
+        const resp = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'authorization_code',
+            client_id: clientId,
+            code,
+            redirect_uri: redirectUri,
+            code_verifier: codeVerifier,
+          }),
+        });
+        if (resp.ok) {
+          tokens = await resp.json();
+          resolved = cand;
+          break;
+        }
+        try { lastError = JSON.stringify(await resp.json()); } catch { lastError = `${resp.status}`; }
       }
 
-      const tokens = await tokenResponse.json();
+      if (!tokens || !resolved) {
+        throw new Error(`Token request failed across all environments: ${lastError}`);
+      }
+
+      // Pokud máme ID token, ověříme env z `iss` — autoritativní zdroj.
+      if (tokens.id_token) {
+        try {
+          const payload = JSON.parse(atob(tokens.id_token.split('.')[1]));
+          if (payload.iss) {
+            const fromIss = findEnvByIssuer(cfg, payload.iss);
+            if (fromIss) resolved = fromIss;
+          }
+        } catch { /* ponecháme resolved z fetch loopu */ }
+      }
+
       localStorage.setItem('access_token', tokens.access_token);
       if (tokens.id_token) localStorage.setItem('id_token', tokens.id_token);
       if (tokens.refresh_token) localStorage.setItem('refresh_token', tokens.refresh_token);
@@ -272,14 +338,16 @@ const App: React.FC = () => {
       localStorage.setItem('used_client_type', effectiveType);
       localStorage.setItem('login_client_type', clientType);
       localStorage.setItem('used_protocol', 'oidc');
+      localStorage.setItem(STORAGE_ENV_KEY, resolved.key);
       localStorage.removeItem('code_verifier');
       localStorage.removeItem('code_challenge');
+      setSelectedEnv(resolved.key);
       setUsedClientType(effectiveType);
       setLoginClientType(clientType);
       setProtocol('oidc');
 
-      if (tokens.id_token) parseUserInfoFromIdToken(env, tokens.id_token);
-      else await fetchUserInfo(env, tokens.access_token);
+      if (tokens.id_token) parseUserInfoFromIdToken(resolved.env, tokens.id_token);
+      else await fetchUserInfo(resolved.env, tokens.access_token);
     } catch (error) {
       setErrorMsg(`Chyba při dokončování přihlášení: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
       setLoading(false);
@@ -299,7 +367,7 @@ const App: React.FC = () => {
       localStorage.setItem('code_challenge', codeChallenge);
 
       const clientId = oidcClientIdFor(envConfig, clientType);
-      const redirectUri = `${window.location.origin}?client_type=${clientType}&protocol=oidc`;
+      const redirectUri = `${window.location.origin}${clientPath('oidc', clientType)}`;
 
       const isStepUp = !!acrValues;
       let authUrl = `${envConfig.url}/realms/${envConfig.realm}/protocol/openid-connect/auth` +
@@ -338,7 +406,7 @@ const App: React.FC = () => {
     if (!envConfig) return;
     try {
       const samlClientId = samlClientIdFor(envConfig, clientType);
-      const acsUrl = `${window.location.origin}?client_type=${clientType}&amp;protocol=saml`;
+      const acsUrl = `${window.location.origin}${clientPath('saml', clientType)}`;
       const requestId = '_' + Math.random().toString(36).substring(2, 18);
       const issueInstant = new Date().toISOString();
       const authnRequest = `<?xml version="1.0" encoding="UTF-8"?><samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ID="${requestId}" Version="2.0" IssueInstant="${issueInstant}" AssertionConsumerServiceURL="${acsUrl}" ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"><saml:Issuer>${samlClientId}</saml:Issuer></samlp:AuthnRequest>`;
@@ -348,12 +416,8 @@ const App: React.FC = () => {
       for (let i = 0; i < deflated.length; i++) deflatedStr += String.fromCharCode(deflated[i]);
       const samlRequest = encodeURIComponent(btoa(deflatedStr));
 
-      const relayState = encodeURIComponent(`client_type=${clientType}`);
       const samlEndpoint = `${envConfig.url}/realms/${envConfig.realm}/protocol/saml`;
-      const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}&RelayState=${relayState}`;
-
-      localStorage.setItem('saml_client_type', clientType);
-      localStorage.setItem('saml_request_id', requestId);
+      const redirectUrl = `${samlEndpoint}?SAMLRequest=${samlRequest}`;
 
       window.location.href = redirectUrl;
     } catch (error) {
@@ -361,11 +425,10 @@ const App: React.FC = () => {
     }
   }, [envConfig]);
 
-  const parseSamlCallback = useCallback((): void => {
+  const parseSamlCallback = useCallback((cfg: AppConfig, clientType: ClientType): void => {
     const urlParams = new URLSearchParams(window.location.search);
     const samlResponse = urlParams.get('SAMLResponse');
     const samlError = urlParams.get('SAMLError');
-    const clientType = (urlParams.get('client_type') || localStorage.getItem('saml_client_type') || '1FA') as ClientType;
 
     if (samlError) {
       setErrorMsg(`Chyba při SAML přihlášení: ${samlError}`);
@@ -390,6 +453,14 @@ const App: React.FC = () => {
       if (parseError) throw new Error('Chyba při parsování SAML XML');
 
       const nameId = xmlDoc.querySelector('NameID')?.textContent || 'N/A';
+
+      // Env z <saml:Issuer> v Response (= URL realmu, který Assertion vystavil).
+      const issuer = xmlDoc.querySelector('Issuer')?.textContent?.trim() || '';
+      const resolvedEnv = issuer ? findEnvByIssuer(cfg, issuer) : null;
+      if (resolvedEnv) {
+        localStorage.setItem(STORAGE_ENV_KEY, resolvedEnv.key);
+        setSelectedEnv(resolvedEnv.key);
+      }
 
       const attrs: SamlAttributes = {};
       xmlDoc.querySelectorAll('Attribute').forEach((attr) => {
@@ -449,10 +520,7 @@ const App: React.FC = () => {
       localStorage.setItem('used_client_type', clientType);
       localStorage.setItem('used_protocol', 'saml');
       localStorage.setItem('saml_attributes', JSON.stringify(attrs));
-      localStorage.removeItem('saml_client_type');
-      localStorage.removeItem('saml_request_id');
-
-      window.history.replaceState({}, document.title, window.location.pathname);
+      window.history.replaceState({}, document.title, '/');
       setLoading(false);
     } catch (error) {
       setErrorMsg(`Chyba při zpracování SAML response: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
@@ -537,20 +605,23 @@ const App: React.FC = () => {
     setLoading(false);
   }, [clearAuthStorage]);
 
-  const parseKeycloakCallback = useCallback((): void => {
-    if (!envConfig) { setLoading(false); return; }
-    const urlParams = new URLSearchParams(window.location.search);
-    const proto = urlParams.get('protocol');
+  // Callback handling řídí path: protokol + clientType bere z pathname (např. /oidc/1fa).
+  // Env je odvozeno z `iss` (OIDC) nebo <Issuer> (SAML) až po dekódování tokenu,
+  // takže envConfig není potřeba dopředu — viz exchangeCodeForToken.
+  const parseKeycloakCallback = useCallback((cfg: AppConfig): void => {
+    const route = parseClientPath(window.location.pathname);
+    if (!route) { setLoading(false); return; }
 
-    if (proto === 'saml' || urlParams.has('SAMLResponse') || urlParams.has('SAMLError')) {
-      parseSamlCallback();
+    const urlParams = new URLSearchParams(window.location.search);
+
+    if (route.protocol === 'saml') {
+      parseSamlCallback(cfg, route.clientType);
       return;
     }
 
     const code = urlParams.get('code');
     const error = urlParams.get('error');
     const errorDescription = urlParams.get('error_description');
-    const clientType = (urlParams.get('client_type') as ClientType) || '1FA';
 
     if (error) {
       setErrorMsg(`Chyba při přihlášení: ${error}\n${errorDescription || ''}`);
@@ -561,28 +632,64 @@ const App: React.FC = () => {
       const usedCode = localStorage.getItem('used_auth_code');
       if (usedCode === code) { setLoading(false); return; }
       localStorage.setItem('used_auth_code', code);
-      exchangeCodeForToken(envConfig, code, clientType);
+      const storedEnv = localStorage.getItem(STORAGE_ENV_KEY);
+      const knownEnv = storedEnv && cfg.environments[storedEnv]
+        ? { key: storedEnv, env: cfg.environments[storedEnv] }
+        : null;
+      exchangeCodeForToken(cfg, knownEnv, code, route.clientType);
       return;
     }
     setLoading(false);
-  }, [envConfig, exchangeCodeForToken, parseSamlCallback]);
+  }, [exchangeCodeForToken, parseSamlCallback]);
 
-  // Spustíme až po načtení config — pokud je v URL callback, potřebujeme env config
+  // Po načtení configu rozhodneme:
+  //  - callback (URL obsahuje code / SAMLResponse / error) → parseKeycloakCallback
+  //  - cesta /oidc|saml/1fa|2fa|3fa bez callback paramů → pending direct login
+  //    (po vybrání env se auto-spustí login)
+  //  - jinak rozcestník
   useEffect(() => {
     if (!config) return;
     const urlParams = new URLSearchParams(window.location.search);
     const hasCallback = urlParams.has('code') || urlParams.has('error') ||
-      urlParams.has('SAMLResponse') || urlParams.has('SAMLError') ||
-      (urlParams.has('protocol') && urlParams.get('protocol') === 'saml');
+      urlParams.has('SAMLResponse') || urlParams.has('SAMLError');
 
-    if (hasCallback && envConfig) parseKeycloakCallback();
-    else checkAuthStatus();
-  }, [config, envConfig, parseKeycloakCallback, checkAuthStatus]);
+    if (hasCallback) {
+      parseKeycloakCallback(config);
+      return;
+    }
+
+    const route = parseClientPath(window.location.pathname);
+    if (route) {
+      // Storage čistíme proto, aby pending login startoval s čistým stavem
+      // (ne na zbytcích z minulé session) — env z localStorage zachováme.
+      clearAuthStorage();
+      resetClientState();
+      setPendingDirectLogin(route);
+      setLoading(false);
+      return;
+    }
+
+    checkAuthStatus();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config]);
 
   // Persistence zvoleného env
   useEffect(() => {
     if (selectedEnv) localStorage.setItem(STORAGE_ENV_KEY, selectedEnv);
   }, [selectedEnv]);
+
+  // Auto-trigger loginu pro pending direct entry. Spustí se jakmile máme envConfig.
+  useEffect(() => {
+    if (!pendingDirectLogin || !envConfig) return;
+    const { protocol: p, clientType } = pendingDirectLogin;
+    setPendingDirectLogin(null);
+    if (p === 'oidc') loginWithOidc(clientType);
+    else loginWithSaml(clientType);
+  }, [pendingDirectLogin, envConfig, loginWithOidc, loginWithSaml]);
+
+  // Pokud uživatel přijde na callback URL (např. /oidc/1fa) a klikne na logo
+  // ("SIP Demo App"), chceme se vrátit na rozcestník. handleResetEnv smaže env,
+  // ale URL stále obsahuje /oidc/1fa — manuálně vyčistíme pathname.
 
   // ── UI helpery ────────────────────────────────────────────────────────────
 
@@ -607,6 +714,10 @@ const App: React.FC = () => {
     clearAuthStorage();
     resetClientState();
     setSelectedEnv(null);
+    setPendingDirectLogin(null);
+    if (window.location.pathname !== '/') {
+      window.history.replaceState({}, document.title, '/');
+    }
   };
 
   const handleBack = () => {
