@@ -217,7 +217,9 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       setUserInfo(info);
       localStorage.setItem('user_info', JSON.stringify(info));
-      window.history.replaceState({}, document.title, '/');
+      // Necháme cestu (např. /oidc/1fa) — uživatel z URL vidí, který klient
+      // je přihlášený. Smažeme jen query (?code=...).
+      window.history.replaceState({}, document.title, window.location.pathname);
       localStorage.removeItem('used_auth_code');
       setLoading(false);
     } catch (error) {
@@ -244,7 +246,9 @@ const App: React.FC = () => {
       setIsAuthenticated(true);
       setUserInfo(info);
       localStorage.setItem('user_info', JSON.stringify(info));
-      window.history.replaceState({}, document.title, '/');
+      // Necháme cestu (např. /oidc/1fa) — uživatel z URL vidí, který klient
+      // je přihlášený. Smažeme jen query (?code=...).
+      window.history.replaceState({}, document.title, window.location.pathname);
       localStorage.removeItem('used_auth_code');
       setLoading(false);
     } catch {
@@ -520,7 +524,9 @@ const App: React.FC = () => {
       localStorage.setItem('used_client_type', clientType);
       localStorage.setItem('used_protocol', 'saml');
       localStorage.setItem('saml_attributes', JSON.stringify(attrs));
-      window.history.replaceState({}, document.title, '/');
+      // Necháme cestu (např. /saml/1fa) — uživatel z URL vidí, který klient
+      // je přihlášený. Smažeme jen query (?SAMLResponse=...).
+      window.history.replaceState({}, document.title, window.location.pathname);
       setLoading(false);
     } catch (error) {
       setErrorMsg(`Chyba při zpracování SAML response: ${error instanceof Error ? error.message : 'Neznámá chyba'}`);
@@ -660,6 +666,30 @@ const App: React.FC = () => {
 
     const route = parseClientPath(window.location.pathname);
     if (route) {
+      // F5 v dashboardu: pokud máme uloženou session, kterou cesta odpovídá,
+      // obnovíme přihlášený stav místo zahájení nového loginu.
+      const storedUser = localStorage.getItem('user_info');
+      const storedProto = localStorage.getItem('used_protocol');
+      const storedLoginClient = localStorage.getItem('login_client_type');
+      const storedUsedClient = localStorage.getItem('used_client_type');
+      const storedEnv = localStorage.getItem(STORAGE_ENV_KEY);
+      if (storedUser && storedProto === route.protocol && storedLoginClient === route.clientType && storedEnv && config.environments[storedEnv]) {
+        try {
+          const info: UserInfo = JSON.parse(storedUser);
+          setUserInfo(info);
+          setIsAuthenticated(true);
+          setSelectedEnv(storedEnv);
+          setProtocol(route.protocol);
+          setLoginClientType(route.clientType);
+          setUsedClientType((storedUsedClient as ClientType) || route.clientType);
+          if (route.protocol === 'saml') {
+            const samlAttrsRaw = localStorage.getItem('saml_attributes');
+            if (samlAttrsRaw) setSamlAttributes(JSON.parse(samlAttrsRaw));
+          }
+          setLoading(false);
+          return;
+        } catch { /* fallthrough na pending login */ }
+      }
       // Storage čistíme proto, aby pending login startoval s čistým stavem
       // (ne na zbytcích z minulé session) — env z localStorage zachováme.
       clearAuthStorage();
